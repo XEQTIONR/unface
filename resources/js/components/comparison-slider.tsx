@@ -1,5 +1,5 @@
 import { ChevronsLeftRight } from 'lucide-react';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 
 export function ComparisonSlider() {
@@ -7,9 +7,14 @@ export function ComparisonSlider() {
     const img2 = 'https://muffinman.io/blog/image-comparison-slider/setnja-03.png';
 
     const containerRef = useRef<HTMLDivElement>(null);
-    const didInitPosition = useRef(false);
-    const [position, setPosition] = useState(0);
+    /** 0–100, 50 = middle */
+    const [positionPercent, setPositionPercent] = useState(50);
     const [containerWidth, setContainerWidth] = useState(0);
+
+    const positionPx = useMemo(
+        () => (containerWidth * positionPercent) / 100,
+        [containerWidth, positionPercent],
+    );
 
     const updatePositionFromClientX = useCallback((clientX: number) => {
         const el = containerRef.current;
@@ -19,9 +24,15 @@ export function ComparisonSlider() {
         }
 
         const rect = el.getBoundingClientRect();
-        const x = clientX - rect.left;
 
-        setPosition(Math.max(0, Math.min(x, rect.width)));
+        if (rect.width <= 0) {
+            return;
+        }
+
+        const x = clientX - rect.left;
+        const percent = (x / rect.width) * 100;
+
+        setPositionPercent(Math.max(0, Math.min(100, percent)));
     }, []);
 
     useEffect(() => {
@@ -32,18 +43,7 @@ export function ComparisonSlider() {
         }
 
         const sync = () => {
-            const w = el.getBoundingClientRect().width;
-
-            setContainerWidth(w);
-            setPosition((prev) => {
-                if (!didInitPosition.current && w > 0) {
-                    didInitPosition.current = true;
-
-                    return w / 2;
-                }
-
-                return Math.min(prev, w);
-            });
+            setContainerWidth(el.getBoundingClientRect().width);
         };
 
         sync();
@@ -58,7 +58,7 @@ export function ComparisonSlider() {
     return (
         <div className="grow-0">
             <div ref={containerRef} className="relative select-none">
-                <div className="relative" style={{ width: `${position}px` }}>
+                <div className="relative" style={{ width: `${positionPx}px` }}>
                     <img
                         className="absolute left-0 top-0 h-144 w-auto border-r-2 border-neutral-600 object-cover object-top-left"
                         src={img1}
@@ -70,7 +70,7 @@ export function ComparisonSlider() {
                     type="button"
                     variant="secondary"
                     className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 touch-none cursor-ew-resize"
-                    style={{ left: `${position}px` }}
+                    style={{ left: `${positionPx}px` }}
                     onPointerDown={(e) => {
                         e.preventDefault();
                         e.currentTarget.setPointerCapture(e.pointerId);
@@ -100,12 +100,13 @@ export function ComparisonSlider() {
                 />
             </div>
             <input
-                className='hidden'
+                className="hidden"
                 type="range"
                 min={0}
-                max={Math.max(containerWidth, 1)}
-                value={position}
-                onChange={(e) => setPosition(Number(e.target.value))}
+                max={100}
+                step={0.1}
+                value={positionPercent}
+                onChange={(e) => setPositionPercent(Number(e.target.value))}
             />
         </div>
     );
