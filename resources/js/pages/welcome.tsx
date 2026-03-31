@@ -109,7 +109,9 @@ export default function Welcome() {
                     </div>
                 </div>
                 <div className='w-full'>
-                    <ComparisonSlider />
+                    <div className='border-4 border-amber-300 flex justify-center items-center'>
+                        <ComparisonSlider />
+                    </div>
                 </div>
                 
                 <Separator className="my-30" />
