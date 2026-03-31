@@ -1,5 +1,6 @@
 import { Head } from '@inertiajs/react';
 import { ArrowRight } from 'lucide-react';
+import { ComparisonSlider } from '@/components/comparison-slider';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { PlaceholderPattern } from '@/components/ui/placeholder-pattern';
@@ -13,8 +14,8 @@ export default function Welcome() {
                 <div className="w-full md:max-w-7xl px-4 mx-auto flex flex-col gap-4">
                     <div className="flex flex-col md:flex-row gap-4 md:grid-cols-3">
                         <div className="w-full md:w-1/2 relative overflow-hidden">
-                            <h1 className="text-7xl font-black tracking-tighter mb-10">
-                                AI-Powered <br /> Face Tracking <br /> and Removal
+                            <h1 className="text-6xl font-black tracking-tighter mb-10">
+                                AI-Powered <br /> Video Face Tracking <br /> and Removal
                             </h1>
                             <p className="text-xl text-muted-foreground leading-7">
                                 Transform your video edits with dynamic face removal and sticker overlay.
@@ -32,7 +33,7 @@ export default function Welcome() {
                         </div>
                     </div>
                     <div className="relative md:w-3/5 overflow-hidden rounded-xl md:min-h-min mt-30">
-                        <h2 className="text-4xl tracking-tight font-black mb-4">Designed for pro speed edits</h2>
+                        <h2 className="text-4xl tracking-tight font-black mb-4">Designed to be quick and easy</h2>
                         <p className="text-muted-foreground">
                             Our neural engine handles the heavy lifting, so you can focus on the creative vision.
                             One-click solutions for complex masking tasks.
@@ -43,6 +44,13 @@ export default function Welcome() {
                         <div className="col-span-1 bg-neutral-900 min-h-36"></div>
                         <div className="col-span-1 bg-neutral-900 min-h-36"></div>
                         <div className="col-span-2 bg-neutral-900 min-h-36"></div>
+                    </div>
+                    <div className="relative md:w-3/5 overflow-hidden rounded-xl md:min-h-min mt-30">
+                        <h2 className="text-4xl tracking-tight font-black mb-4">Redact faces of individuals in videos</h2>
+                        <p className="text-muted-foreground">
+                            Our neural engine handles the heavy lifting, so you can focus on the creative vision.
+                            One-click solutions for complex masking tasks.
+                        </p>
                     </div>
                 </div>
                 <Separator className="my-30" />
@@ -100,6 +108,10 @@ export default function Welcome() {
                         </div>
                     </div>
                 </div>
+                <div className='w-full'>
+                    <ComparisonSlider />
+                </div>
+                
                 <Separator className="my-30" />
                 <div className="w-full md:max-w-7xl px-4 mx-auto flex flex-col gap-4">
                     <h2 className="text-4xl tracking-tight font-black mb-4 text-center">Frequently Asked Questions</h2>
