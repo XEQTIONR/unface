@@ -1,7 +1,8 @@
 import { Head } from '@inertiajs/react';
-import { Triangle, Users } from 'lucide-react';
+import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
-import { create } from '@/routes/video';
+import { Button } from '@/components/ui/button';
+import { create } from '@/routes/videos';
 
 const PX_PER_SECOND = 10;
 
@@ -12,7 +13,10 @@ export default function VideoEditor() {
 
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
+    const [videoLength, setVideoLength] = useState(0);
     const [isScrubbing, setIsScrubbing] = useState(false);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [zoomLevel, setZoomLevel] = useState(1);
 
     const setTimeFromClientX = useCallback((clientX: number) => {
         const timeline = timelineRef.current;
@@ -50,15 +54,18 @@ export default function VideoEditor() {
         <>
             <Head title="Video Editor" />
             <div className="flex flex-col">
-                <div className="flex w-full flex-col gap-4 overflow-x-auto rounded-xl px-4 md:px-16">
+                <div className="flex w-full flex-col gap-5 overflow-x-auto rounded-xl px-4 md:px-16">
                     <video
                         ref={videoRef}
-                        controls
-                        className="w-full aspect-video rounded-xl border border-neutral-300 object-cover"
+                        
+                        className="relative z-10 w-full aspect-video rounded-xl border border-neutral-300 object-cover"
                         src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
                         onLoadedMetadata={(e) => {
                             setDuration(e.currentTarget.duration);
+                            setVideoLength(e.currentTarget.duration);
                         }}
+                        onPlay={() => setIsPlaying(true)}
+                        onPause={() => setIsPlaying(false)}
                         onTimeUpdate={(e) => {
                             if (isScrubbingRef.current) {
                                 return;
@@ -67,72 +74,101 @@ export default function VideoEditor() {
                             setCurrentTime(e.currentTarget.currentTime);
                         }}
                     />
-                    <div className="w-full flex flex-col gap-5">
-                        <h1 className="font-extrabold tracking-widest uppercase">Global Timeline</h1>
-                        <div
-                            ref={timelineRef}
-                            className="relative h-40 w-full cursor-col-resize touch-none select-none"
-                            onPointerDown={(e) => {
-                                e.preventDefault();
-                                isScrubbingRef.current = true;
-                                setIsScrubbing(true);
-                                e.currentTarget.setPointerCapture(e.pointerId);
-                                setTimeFromClientX(e.clientX);
-                            }}
-                            onPointerMove={(e) => {
-                                if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
-                                    return;
-                                }
-
-                                setTimeFromClientX(e.clientX);
-                            }}
-                            onPointerUp={(e) => {
-                                e.currentTarget.releasePointerCapture(e.pointerId);
-                                isScrubbingRef.current = false;
-                                setIsScrubbing(false);
-                            }}
-                            onPointerCancel={(e) => {
-                                e.currentTarget.releasePointerCapture(e.pointerId);
-                                isScrubbingRef.current = false;
-                                setIsScrubbing(false);
-                            }}
-                        >
+                    <div className="w-full flex flex-col gap-5 pt-5">
+                        <div className="flex justify-between">
+                            <h1 className="font-extrabold tracking-widest uppercase">Global Timeline</h1>
+                            <div className="flex items-center gap-2">
+                                <Button onClick={() => setZoomLevel(zoomLevel + 0.1)} variant="ghost" size="icon">
+                                    <ZoomIn />
+                                </Button>
+                                <Button onClick={() => setZoomLevel(Math.max(1, zoomLevel - 0.1))} variant="ghost" size="icon">
+                                    <ZoomOut />
+                                </Button>
+                            </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
                             <div
-                                id="seeker-line"
-                                className={
-                                    'absolute -top-3 z-10 -mr-px h-30 w-px overflow-visible bg-neutral-300 ' +
-                                    (isScrubbing ? '' : 'transition-all duration-250 ease-linear')
-                                }
-                                style={{
-                                    left: currentTime * PX_PER_SECOND + 'px',
+                                ref={timelineRef}
+                                className="relative w-full cursor-col-resize touch-none select-none pt-3"
+                                onPointerDown={(e) => {
+                                    e.preventDefault();
+                                    isScrubbingRef.current = true;
+                                    setIsScrubbing(true);
+                                    e.currentTarget.setPointerCapture(e.pointerId);
+                                    setTimeFromClientX(e.clientX);
+                                }}
+                                onPointerMove={(e) => {
+                                    if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
+                                        return;
+                                    }
+
+                                    setTimeFromClientX(e.clientX);
+                                }}
+                                onPointerUp={(e) => {
+                                    e.currentTarget.releasePointerCapture(e.pointerId);
+                                    isScrubbingRef.current = false;
+                                    setIsScrubbing(false);
+                                }}
+                                onPointerCancel={(e) => {
+                                    e.currentTarget.releasePointerCapture(e.pointerId);
+                                    isScrubbingRef.current = false;
+                                    setIsScrubbing(false);
                                 }}
                             >
-                                <Triangle size={15} className="relative -left-[7px] -top-1 fill-white stroke-0 text-neutral-300 rotate-180" />
-                            </div>
-                            <div className='w-full pb-5 bg-neutral-900 flex flex-col gap-1.5 relative h-24 overflow-y-visible'>
-                                <div 
-                                    className="w-full h-5"
-                                    style={{
-                                        backgroundColor: "transparent",
-                                        backgroundImage: `
+                                <div className="relative h-36 w-full overflow-visible pb-5">
+                                    <div
+                                        id="seeker-line"
+                                        className={
+                                            'pointer-events-none absolute -top-3 bottom-0 z-1 -mr-px w-px overflow-visible bg-neutral-300 ' +
+                                            (isScrubbing ? '' : 'transition-all duration-250 ease-linear')
+                                        }
+                                        style={{
+                                            left: `${currentTime * PX_PER_SECOND * zoomLevel}px`,
+                                        }}
+                                    >
+                                        <Triangle
+                                            size={15}
+                                            className="relative -left-[7px] -top-1 rotate-180 fill-white stroke-0 text-neutral-300"
+                                        />
+                                    </div>
+                                    <div className="relative flex h-full w-full flex-col gap-1.5 bg-neutral-900 pb-5">
+                                        <div
+                                            className="h-5 w-full transition-all duration-250 ease-linear"
+                                            style={{
+                                                backgroundColor: 'transparent',
+                                                backgroundImage: `
                                             linear-gradient(90deg, #888 1px, transparent 1px),
                                             linear-gradient(90deg, #666 1px, transparent 1px)
                                         `,
-                                        backgroundSize: "50px 20px, 10px 10px", /* Width and Height of each tick layer */
-                                        backgroundRepeat: "repeat-x",
-                                        backgroundPosition: "0 top"
-                                    }}
-                                >
+                                                backgroundSize: `${zoomLevel * 50}px 13px, ${zoomLevel * 10}px 5px`,
+                                                backgroundRepeat: 'repeat-x',
+                                                backgroundPosition: '0 top',
+                                            }}
+                                        />
 
-                                </div>
-                                <div className='w-full h-12 flex items-stretch gap-1'>
-                                    <div className="w-44 bg-neutral-700/65 rounded border-x border-neutral-300 uppercase flex items-center px-3 text-xs font-bold">
-                                        CLIP_01
+                                        <div className="flex h-3/5 mt-3 w-full items-stretch gap-1">
+                                            <div 
+                                                className="flex items-center rounded border-x border-neutral-300 bg-neutral-700/65 px-3 text-xs font-bold uppercase transition-discrete duration-250 ease-linear"
+                                                style={{ width: `${videoLength * PX_PER_SECOND * zoomLevel}px` }}
+                                            >
+                                                Clip_01
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="w-25 bg-neutral-700/65 rounded border-x border-neutral-300" />
                                 </div>
                             </div>
-                            <span className="text-sm font-bold">{formatTime(currentTime)}</span>
+                            <div className="relative z-10 flex items-center gap-2">
+                                <Button
+                                    onClick={() =>
+                                        isPlaying ? videoRef.current?.pause() : videoRef.current?.play()
+                                    }
+                                    variant="secondary"
+                                    size="icon"
+                                >
+                                    {isPlaying ? <Pause /> : <Play />}
+                                </Button>
+                                <span className="text-sm font-bold">{formatTime(currentTime)}</span>
+                            </div>
                         </div>
                         
                         

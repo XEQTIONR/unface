@@ -6,8 +6,8 @@ export default function AppLogoIcon(props: SVGAttributes<SVGElement>) {
         // <svg xmlns="http://www.w3.org/2000/svg" height="1.5em" viewBox="0 -960 960 960" width="1.5em" fill="#e3e3e3"><path d="m160-800 80 160h120l-80-160h80l80 160h120l-80-160h80l80 160h120l-80-160h120q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800Zm0 240v320h640v-320H160Zm0 0v320-320Z"/></svg>
         // <svg {...props} xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 -960 960 960" width="1em" fill="#e3e3e3"><path d="M312-292q-40 0-78.5-14.5T166-348q-38-37-56-89.5T92-545q0-54 25-88.5t73-34.5q8 0 16.5 1.5T223-662l257 97 257-97q8-3 16.5-4.5T770-668q48 0 73 34.5t25 88.5q0 55-18 107.5T794-348q-29 27-67.5 41.5T648-292q-52 0-95.5-30L509-352h-58l-43.5 30Q364-292 312-292Zm37-120q23 0 37-10.5t14-27.5q-1-34-49-66t-100-32q-23 0-36.5 10.5T201-510q1 35 48.5 66.5T349-412Zm262 0q52 0 100-32t49-66q0-17-14-27.5T709-548q-51 1-99 32.5T561-450q0 17 13.5 27.5T611-412Z"/></svg>
     
-        <svg {...props} width="1em" height="1em" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
-                viewBox="0 0 64 64" xml:space="preserve">
+        <svg {...props} width="1em" height="1em"  x="0px" y="0px"
+                viewBox="0 0 64 64">
             <g
             id="g6-3"
             transform="matrix(1.1081099,0,0,1.1081099,-76.812785,-34.134404)"
