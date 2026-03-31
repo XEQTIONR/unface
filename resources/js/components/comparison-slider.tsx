@@ -56,11 +56,11 @@ export function ComparisonSlider() {
     }, []);
 
     return (
-        <div className="grow-0 border-4 border-red-500">
+        <div className="grow-0">
             <div ref={containerRef} className="relative select-none">
                 <div className="relative" style={{ width: `${position}px` }}>
                     <img
-                        className="absolute left-0 top-0 h-96 w-auto border-r-2 border-neutral-600 object-cover object-top-left"
+                        className="absolute left-0 top-0 h-144 w-auto border-r-2 border-neutral-600 object-cover object-top-left"
                         src={img1}
                         alt="Image 1"
                         draggable={false}
@@ -93,7 +93,7 @@ export function ComparisonSlider() {
                     <ChevronsLeftRight />
                 </Button>
                 <img
-                    className="h-96 w-auto border-l-2 border-neutral-600 object-cover object-top-right"
+                    className="h-144 w-auto border-l-2 border-neutral-600 object-cover object-top-right"
                     src={img2}
                     alt="Image 2"
                     draggable={false}

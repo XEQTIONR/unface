@@ -45,16 +45,24 @@ export default function Welcome() {
                         <div className="col-span-1 bg-neutral-900 min-h-36"></div>
                         <div className="col-span-2 bg-neutral-900 min-h-36"></div>
                     </div>
-                    <div className="relative md:w-3/5 overflow-hidden rounded-xl md:min-h-min mt-30">
+                </div>
+                <Separator className="mt-30" />
+                <div className="w-full md:max-w-7xl px-4 mx-auto mt-30 flex flex-col gap-4">
+                    <div className="relative md:w-3/5 overflow-hidden rounded-xl md:min-h-min">
                         <h2 className="text-4xl tracking-tight font-black mb-4">Redact faces of individuals in videos</h2>
                         <p className="text-muted-foreground">
                             Our neural engine handles the heavy lifting, so you can focus on the creative vision.
                             One-click solutions for complex masking tasks.
                         </p>
                     </div>
+                    <div className='w-full mt-14'>
+                        <div className='flex justify-center items-center'>
+                            <ComparisonSlider />
+                        </div>
+                    </div>
                 </div>
-                <Separator className="my-30" />
-                <div className="w-full md:max-w-7xl px-4 mx-auto flex flex-col gap-4">
+                <Separator className="mt-30" />
+                <div className="w-full md:max-w-7xl px-4 mx-auto flex flex-col gap-4 mt-30">
                     <h2 className="text-4xl tracking-tight font-black mb-4 text-center">Three steps to magic</h2>
                     <p className="text-muted-foreground text-center">Upload, Select, Export. It's that simple.</p>
                     <div className="w-full md:max-w-7xl flex items-center">
@@ -108,14 +116,10 @@ export default function Welcome() {
                         </div>
                     </div>
                 </div>
-                <div className='w-full'>
-                    <div className='border-4 border-amber-300 flex justify-center items-center'>
-                        <ComparisonSlider />
-                    </div>
-                </div>
                 
-                <Separator className="my-30" />
-                <div className="w-full md:max-w-7xl px-4 mx-auto flex flex-col gap-4">
+                
+                <Separator className="mt-30" />
+                <div className="w-full md:max-w-7xl px-4 mx-auto flex flex-col gap-4 mt-30">
                     <h2 className="text-4xl tracking-tight font-black mb-4 text-center">Frequently Asked Questions</h2>
                     <Accordion
                         type="single"
