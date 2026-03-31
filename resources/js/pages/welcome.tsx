@@ -10,7 +10,7 @@ export default function Welcome() {
     return (
         <>
             <Head title="Welcome" />
-            <div className="flex h-full flex-1 flex-col overflow-x-auto rounded-xl p-4 mt-20">
+            <div className="flex h-full flex-1 flex-col overflow-x-auto rounded-xl p-4 mt-40">
                 <div className="w-full md:max-w-7xl px-4 mx-auto flex flex-col gap-4">
                     <div className="flex flex-col md:flex-row gap-4 md:grid-cols-3">
                         <div className="w-full md:w-1/2 relative overflow-hidden">
@@ -32,7 +32,7 @@ export default function Welcome() {
                             <PlaceholderPattern className="absolute inset-0 size-full stroke-neutral-900/20 dark:stroke-neutral-100/20" />
                         </div>
                     </div>
-                    <div className="relative md:w-3/5 overflow-hidden rounded-xl md:min-h-min mt-30">
+                    <div className="relative md:w-3/5 overflow-hidden rounded-xl md:min-h-min mt-40">
                         <h2 className="text-4xl tracking-tight font-black mb-4">Designed to be quick and easy</h2>
                         <p className="text-muted-foreground">
                             Our neural engine handles the heavy lifting, so you can focus on the creative vision.
@@ -46,8 +46,8 @@ export default function Welcome() {
                         <div className="col-span-2 bg-neutral-900 min-h-36"></div>
                     </div>
                 </div>
-                <Separator className="mt-30" />
-                <div className="w-full md:max-w-7xl px-4 mx-auto mt-30 flex flex-col gap-4">
+                <Separator className="mt-25" />
+                <div className="w-full md:max-w-7xl px-4 mx-auto mt-25 flex flex-col gap-4">
                     <div className="relative md:w-3/5 overflow-hidden rounded-xl md:min-h-min">
                         <h2 className="text-4xl tracking-tight font-black mb-4">Redact faces of individuals in videos</h2>
                         <p className="text-muted-foreground">
@@ -61,8 +61,8 @@ export default function Welcome() {
                         </div>
                     </div>
                 </div>
-                <Separator className="mt-30" />
-                <div className="w-full md:max-w-7xl px-4 mx-auto flex flex-col gap-4 mt-30">
+                <Separator className="mt-25" />
+                <div className="w-full md:max-w-7xl px-4 mx-auto flex flex-col gap-4 mt-25">
                     <h2 className="text-4xl tracking-tight font-black mb-4 text-center">Three steps to magic</h2>
                     <p className="text-muted-foreground text-center">Upload, Select, Export. It's that simple.</p>
                     <div className="w-full md:max-w-7xl flex items-center">
@@ -118,8 +118,8 @@ export default function Welcome() {
                 </div>
                 
                 
-                <Separator className="mt-30" />
-                <div className="w-full md:max-w-7xl px-4 mx-auto flex flex-col gap-4 mt-30">
+                <Separator className="mt-25" />
+                <div className="w-full md:max-w-7xl px-4 mx-auto flex flex-col gap-4 mt-40">
                     <h2 className="text-4xl tracking-tight font-black mb-4 text-center">Frequently Asked Questions</h2>
                     <Accordion
                         type="single"

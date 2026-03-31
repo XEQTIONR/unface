@@ -1,4 +1,4 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link, usePage, router } from '@inertiajs/react';
 import { Menu, Moon } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import AppLogoIcon from '@/components/app-logo-icon';
@@ -33,6 +33,7 @@ import { useCurrentUrl } from '@/hooks/use-current-url';
 import { useInitials } from '@/hooks/use-initials';
 import { cn, toUrl } from '@/lib/utils';
 import { dashboard } from '@/routes';
+import { login } from '@/routes';
 import type { BreadcrumbItem, NavItem } from '@/types';
 
 type Props = {
@@ -233,7 +234,7 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                                     <Button size="icon" variant="ghost" className=" rounded-full">
                                         <Moon />
                                     </Button>
-                                    <Button variant="ghost" className=" rounded-full">Login</Button>
+                                    <Button onClick={() => router.visit(login())} variant="ghost" className=" rounded-full">Login</Button>
                                     <Button variant="outline" className=" rounded-full">Get Started</Button>
                                </>
                             )
