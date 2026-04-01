@@ -3,11 +3,13 @@ import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { create } from '@/routes/videos';
+import { cn } from '@/lib/utils';
 
 const PX_PER_SECOND = 10;
 
 export default function VideoEditor() {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
     const timelineRef = useRef<HTMLDivElement>(null);
     const isScrubbingRef = useRef(false);
 
@@ -17,6 +19,8 @@ export default function VideoEditor() {
     const [isScrubbing, setIsScrubbing] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [zoomLevel, setZoomLevel] = useState(1);
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+    const [metaLoaded, setMetaLoaded] = useState(false);
 
     const setTimeFromClientX = useCallback((clientX: number) => {
         const timeline = timelineRef.current;
@@ -57,14 +61,29 @@ export default function VideoEditor() {
                 <div className="flex w-full flex-col gap-5 overflow-x-auto rounded-xl px-4 md:px-16">
                     <video
                         ref={videoRef}
-                        
-                        className="relative z-10 w-full aspect-video rounded-xl border border-neutral-300 object-cover"
+                        preload="metadata"
+                        className={cn("relative z-10 w-full rounded-xl border border-neutral-300 object-cover", metaLoaded ? 'hidden' : '')}
                         src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
                         onLoadedMetadata={(e) => {
+                            console.log(e.currentTarget.videoWidth, e.currentTarget.videoHeight);
                             setDuration(e.currentTarget.duration);
                             setVideoLength(e.currentTarget.duration);
+                            setDimensions({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight });
+                            setMetaLoaded(true);
                         }}
-                        onPlay={() => setIsPlaying(true)}
+                        onPlay={(e) => {
+                            setIsPlaying(true)
+                            const ctx = canvasRef.current?.getContext('2d');
+                            function step() {
+                                if (videoRef.current?.paused || videoRef.current?.ended) {
+                                    return
+                                }
+
+                                ctx?.drawImage(videoRef.current, 0, 0, dimensions.width, dimensions.height);
+                                requestAnimationFrame(step);
+                            }
+                              requestAnimationFrame(step);
+                        }}
                         onPause={() => setIsPlaying(false)}
                         onTimeUpdate={(e) => {
                             if (isScrubbingRef.current) {
@@ -74,6 +93,11 @@ export default function VideoEditor() {
                             setCurrentTime(e.currentTarget.currentTime);
                         }}
                     />
+                    <canvas className={cn(
+                        'border border-amber-400',
+                        metaLoaded ? 'block' : 'hidden'
+                    )} ref={canvasRef} width={dimensions.width} height={dimensions.height} />
+
                     <div className="w-full flex flex-col gap-5 pt-5">
                         <div className="flex justify-between">
                             <h1 className="font-extrabold tracking-widest uppercase">Global Timeline</h1>
