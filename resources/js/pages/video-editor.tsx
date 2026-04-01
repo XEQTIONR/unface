@@ -9,6 +9,7 @@ import { useCallback, useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { create } from '@/routes/videos';
+import type { FaceFrame, IdentityFrame } from '@/types/video';
 
 const PX_PER_SECOND = 10;
 
@@ -19,51 +20,61 @@ const DETECTION_INTERVAL_MS = 50;
  * Longest side (px) fed into the detector when the video is larger than this.
  * Smaller sources use **native** resolution (no upscale).
  */
-const MAX_DETECTION_LONG_SIDE = 720;
+const MAX_DETECTION_LONG_SIDE = 720
+
+const DELTA = 1.0
 
 /** SSD MobileNet v1 weights (same family as face-api.js). */
-const FACE_API_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+const FACE_API_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model'
 
-type FaceBox = { x: number; y: number; w: number; h: number };
-
-/** Minimal shape for SSD face detections (face-api.js `FaceDetection`). */
-type FaceApiDetection = { box: { x: number; y: number; width: number; height: number } };
+import type { FaceBox, FaceApiDetection } from '@/types/video'
 
 export default function VideoEditor() {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const timelineRef = useRef<HTMLDivElement>(null);
-    const isScrubbingRef = useRef(false);
+    const videoRef = useRef<HTMLVideoElement>(null)
+    const canvasRef = useRef<HTMLCanvasElement>(null)
+    const timelineRef = useRef<HTMLDivElement>(null)
+    const isScrubbingRef = useRef(false)
 
-    const [currentTime, setCurrentTime] = useState(0);
-    const [duration, setDuration] = useState(0);
-    const [videoLength, setVideoLength] = useState(0);
-    const [isScrubbing, setIsScrubbing] = useState(false);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [zoomLevel, setZoomLevel] = useState(1);
-    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-    const [metaLoaded, setMetaLoaded] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0)
+    const [duration, setDuration] = useState(0)
+    const [videoLength, setVideoLength] = useState(0)
+    const [isScrubbing, setIsScrubbing] = useState(false)
+    const [isPlaying, setIsPlaying] = useState(false)
+    const [zoomLevel, setZoomLevel] = useState(1)
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
+    const [metaLoaded, setMetaLoaded] = useState(false)
 
-    const [faceApiReady, setFaceApiReady] = useState(false);
-    const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null);
-    const latestFacesRef = useRef<FaceBox[]>([]);
+    const [faceApiReady, setFaceApiReady] = useState(false)
+    const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
+    const latestFacesRef = useRef<FaceBox[]>([])
+    const [faces, setFaces] = useState([])
     /** Detection box coords are in detection-canvas pixels (dw×dh), not full video pixels. */
-    const lastDetectionDimsRef = useRef({ dw: 0, dh: 0 });
+    const lastDetectionDimsRef = useRef({ dw: 0, dh: 0 })
+
+    const worker = useRef<Worker | null>(new Worker(new URL('../charDetectWorker.ts', import.meta.url)))
 
     useEffect(() => {
-        detectionCanvasRef.current = document.createElement('canvas');
+        if (worker.current) {
+            worker.current.onmessage = (event: MessageEvent<IdentityFrame>) => {
+                console.log(event.data);
+            }
+        }
+    }, [])
+
+    useEffect(() => {
+        detectionCanvasRef.current = document.createElement('canvas')
 
         return () => {
-            detectionCanvasRef.current = null;
+            detectionCanvasRef.current = null
         };
     }, []);
 
     const setTimeFromClientX = useCallback((clientX: number) => {
-        const timeline = timelineRef.current;
-        const video = videoRef.current;
+        const timeline = timelineRef.current
+        const video = videoRef.current
 
         if (!timeline || !video) {
-            return;
+            return
         }
 
         const rect = timeline.getBoundingClientRect();
@@ -144,6 +155,7 @@ export default function VideoEditor() {
         let busy = false;
 
         const tick = (time: number) => {
+
             if (cancelled) {
                 return;
             }
@@ -194,11 +206,12 @@ export default function VideoEditor() {
                 ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(video, 0, 0, dw, dh);
                 input = canvas;
+                
             }
 
             lastDetectionAt = time;
             busy = true;
-
+            const t = video.currentTime;
             void faceapi
                 .detectAllFaces(
                     input,
@@ -208,12 +221,21 @@ export default function VideoEditor() {
                     }),
                 )
                 .then((detections: FaceApiDetection[]) => {
-                    latestFacesRef.current = detections.map((d) => ({
+                    const fs: FaceBox[] = detections.map((d) => ({
                         x: d.box.x,
                         y: d.box.y,
                         w: d.box.width,
                         h: d.box.height,
                     }));
+                    
+                    const f = {
+                        faces: fs,
+                        time: t
+                    }
+                    //console.log('x', f);
+                    worker.current?.postMessage(f);
+                    latestFacesRef.current = fs
+                    //setFaces((f) => [...f, x]);
                     lastDetectionDimsRef.current = { dw, dh };
                 })
                 .catch((error: unknown) => {
@@ -249,8 +271,8 @@ export default function VideoEditor() {
                                 ? 'pointer-events-none absolute inset-0 z-0 opacity-0'
                                 : 'relative z-0',
                         )}
-                        src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
-                        // src="/multiple.mp4"
+                        // src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
+                        src="/multiple.mp4"
                         onLoadedMetadata={(e) => {
                             console.log('Loaded metadata', e.currentTarget.videoWidth, e.currentTarget.videoHeight);
                             setDuration(e.currentTarget.duration);
@@ -294,17 +316,19 @@ export default function VideoEditor() {
                                 const sx = dw > 0 ? cw / dw : cw / vw;
                                 const sy = dh > 0 ? ch / dh : ch / vh;
 
-                                ctx.strokeStyle = 'rgba(0, 255, 120, 0.95)';
+                                // ctx.strokeStyle = 'rgba(0, 255, 120, 0.95)';
+                                ctx.fillStyle = 'rgba(0, 255, 120, 0.95)';
                                 ctx.lineWidth = Math.max(2, Math.round(cw / 400));
                                 ctx.setLineDash([]);
 
                                 for (const rect of latestFacesRef.current) {
-                                    ctx.strokeRect(
+                                    ctx.fillRect(
                                         rect.x * sx,
                                         rect.y * sy,
                                         rect.w * sx,
                                         rect.h * sy,
                                     );
+                                    
                                 }
 
                                 requestAnimationFrame(step);
