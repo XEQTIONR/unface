@@ -2,8 +2,8 @@ import { Head } from '@inertiajs/react';
 import '@tensorflow/tfjs-backend-cpu';
 import '@tensorflow/tfjs-backend-webgl';
 import * as tf from '@tensorflow/tfjs';
-import * as faceDetection from '@tensorflow-models/face-detection';
-import type { Face, FaceDetector } from '@tensorflow-models/face-detection';
+/** Maintained face-api.js–compatible API for TensorFlow.js 4.x (original `face-api.js` npm targets old TFJS). */
+import * as faceapi from '@vladmandic/face-api';
 import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -16,21 +16,18 @@ const PX_PER_SECOND = 10;
 const DETECTION_INTERVAL_MS = 50;
 
 /**
- * Longest side (px) fed into MediaPipe when the video is larger than this.
- * Smaller sources use **native** resolution (no upscale) for best accuracy.
- * Increase (e.g. 960) for more detail on 4K at the cost of speed.
+ * Longest side (px) fed into the detector when the video is larger than this.
+ * Smaller sources use **native** resolution (no upscale).
  */
 const MAX_DETECTION_LONG_SIDE = 720;
 
-function getFaceRect(face: Face): { x: number; y: number; w: number; h: number } | null {
-    const b = face.box;
+/** SSD MobileNet v1 weights (same family as face-api.js). */
+const FACE_API_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
 
-    if (!b || typeof b.width !== 'number' || typeof b.height !== 'number') {
-        return null;
-    }
+type FaceBox = { x: number; y: number; w: number; h: number };
 
-    return { x: b.xMin, y: b.yMin, w: b.width, h: b.height };
-}
+/** Minimal shape for SSD face detections (face-api.js `FaceDetection`). */
+type FaceApiDetection = { box: { x: number; y: number; width: number; height: number } };
 
 export default function VideoEditor() {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -47,9 +44,9 @@ export default function VideoEditor() {
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const [metaLoaded, setMetaLoaded] = useState(false);
 
-    const [detector, setDetector] = useState<FaceDetector | null>(null);
+    const [faceApiReady, setFaceApiReady] = useState(false);
     const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null);
-    const latestFacesRef = useRef<Face[]>([]);
+    const latestFacesRef = useRef<FaceBox[]>([]);
     /** Detection box coords are in detection-canvas pixels (dw×dh), not full video pixels. */
     const lastDetectionDimsRef = useRef({ dw: 0, dh: 0 });
 
@@ -120,17 +117,10 @@ export default function VideoEditor() {
                     return;
                 }
 
-                const loaded = await faceDetection.createDetector(
-                    faceDetection.SupportedModels.MediaPipeFaceDetector,
-                    {
-                        runtime: 'tfjs',
-                        modelType: 'full',
-                        maxFaces: 10,
-                    },
-                );
+                await faceapi.nets.ssdMobilenetv1.loadFromUri(FACE_API_MODEL_BASE);
 
                 if (!cancelled) {
-                    setDetector(loaded);
+                    setFaceApiReady(true);
                 }
             } catch (error) {
                 console.error(error);
@@ -144,7 +134,7 @@ export default function VideoEditor() {
 
 
     useEffect(() => {
-        if (!detector || !isPlaying) {
+        if (!faceApiReady || !isPlaying) {
             return;
         }
 
@@ -209,10 +199,21 @@ export default function VideoEditor() {
             lastDetectionAt = time;
             busy = true;
 
-            void detector
-                .estimateFaces(input, { flipHorizontal: false })
-                .then((predictions: Face[]) => {
-                    latestFacesRef.current = predictions;
+            void faceapi
+                .detectAllFaces(
+                    input,
+                    new faceapi.SsdMobilenetv1Options({
+                        minConfidence: 0.4,
+                        maxResults: 20,
+                    }),
+                )
+                .then((detections: FaceApiDetection[]) => {
+                    latestFacesRef.current = detections.map((d) => ({
+                        x: d.box.x,
+                        y: d.box.y,
+                        w: d.box.width,
+                        h: d.box.height,
+                    }));
                     lastDetectionDimsRef.current = { dw, dh };
                 })
                 .catch((error: unknown) => {
@@ -229,7 +230,7 @@ export default function VideoEditor() {
             cancelled = true;
             cancelAnimationFrame(rafId);
         };
-    }, [detector, isPlaying]);
+    }, [faceApiReady, isPlaying]);
 
     return (
         <>
@@ -248,8 +249,8 @@ export default function VideoEditor() {
                                 ? 'pointer-events-none absolute inset-0 z-0 opacity-0'
                                 : 'relative z-0',
                         )}
-                        // src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
-                        src="/multiple.mp4"
+                        src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
+                        // src="/multiple.mp4"
                         onLoadedMetadata={(e) => {
                             console.log('Loaded metadata', e.currentTarget.videoWidth, e.currentTarget.videoHeight);
                             setDuration(e.currentTarget.duration);
@@ -297,13 +298,7 @@ export default function VideoEditor() {
                                 ctx.lineWidth = Math.max(2, Math.round(cw / 400));
                                 ctx.setLineDash([]);
 
-                                for (const face of latestFacesRef.current) {
-                                    const rect = getFaceRect(face);
-
-                                    if (!rect) {
-                                        continue;
-                                    }
-
+                                for (const rect of latestFacesRef.current) {
                                     ctx.strokeRect(
                                         rect.x * sx,
                                         rect.y * sy,
