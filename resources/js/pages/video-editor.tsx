@@ -2,7 +2,8 @@ import { Head } from '@inertiajs/react';
 import '@tensorflow/tfjs-backend-cpu';
 import '@tensorflow/tfjs-backend-webgl';
 import * as tf from '@tensorflow/tfjs';
-import * as blazeface from '@tensorflow-models/blazeface';
+import * as faceDetection from '@tensorflow-models/face-detection';
+import type { Face, FaceDetector } from '@tensorflow-models/face-detection';
 import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -11,11 +12,25 @@ import { create } from '@/routes/videos';
 
 const PX_PER_SECOND = 10;
 
-/** How often to run BlazeFace (ms). Video decode stays smooth; lower = more responsive faces, higher = cheaper. */
-const DETECTION_INTERVAL_MS = 120;
+/** How often to run face detection (ms). Lower = fresher boxes; slightly higher can help stability on slow GPUs. */
+const DETECTION_INTERVAL_MS = 50;
 
-/** Longer side of the frame fed into BlazeFace (pixels). Smaller = faster inference, slightly less accurate. */
-const MAX_DETECTION_SIDE = 320;
+/**
+ * Longest side (px) fed into MediaPipe when the video is larger than this.
+ * Smaller sources use **native** resolution (no upscale) for best accuracy.
+ * Increase (e.g. 960) for more detail on 4K at the cost of speed.
+ */
+const MAX_DETECTION_LONG_SIDE = 720;
+
+function getFaceRect(face: Face): { x: number; y: number; w: number; h: number } | null {
+    const b = face.box;
+
+    if (!b || typeof b.width !== 'number' || typeof b.height !== 'number') {
+        return null;
+    }
+
+    return { x: b.xMin, y: b.yMin, w: b.width, h: b.height };
+}
 
 export default function VideoEditor() {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -32,8 +47,11 @@ export default function VideoEditor() {
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const [metaLoaded, setMetaLoaded] = useState(false);
 
-    const [model, setModel] = useState<blazeface.BlazeFaceModel | null>(null);
+    const [detector, setDetector] = useState<FaceDetector | null>(null);
     const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const latestFacesRef = useRef<Face[]>([]);
+    /** Detection box coords are in detection-canvas pixels (dw×dh), not full video pixels. */
+    const lastDetectionDimsRef = useRef({ dw: 0, dh: 0 });
 
     useEffect(() => {
         detectionCanvasRef.current = document.createElement('canvas');
@@ -102,10 +120,17 @@ export default function VideoEditor() {
                     return;
                 }
 
-                const loaded = await blazeface.load();
+                const loaded = await faceDetection.createDetector(
+                    faceDetection.SupportedModels.MediaPipeFaceDetector,
+                    {
+                        runtime: 'tfjs',
+                        modelType: 'full',
+                        maxFaces: 10,
+                    },
+                );
 
                 if (!cancelled) {
-                    setModel(loaded);
+                    setDetector(loaded);
                 }
             } catch (error) {
                 console.error(error);
@@ -119,7 +144,7 @@ export default function VideoEditor() {
 
 
     useEffect(() => {
-        if (!model || !isPlaying) {
+        if (!detector || !isPlaying) {
             return;
         }
 
@@ -157,34 +182,40 @@ export default function VideoEditor() {
                 return;
             }
 
-            let dw = MAX_DETECTION_SIDE;
-            let dh = Math.round((MAX_DETECTION_SIDE * vh) / vw);
+            const long = Math.max(vw, vh);
+            const targetLong = Math.min(long, MAX_DETECTION_LONG_SIDE);
+            const scale = long > 0 ? targetLong / long : 1;
+            const dw = Math.max(1, Math.round(vw * scale));
+            const dh = Math.max(1, Math.round(vh * scale));
 
-            if (vh > vw) {
-                dh = MAX_DETECTION_SIDE;
-                dw = Math.round((MAX_DETECTION_SIDE * vw) / vh);
+            let input: HTMLVideoElement | HTMLCanvasElement = video;
+
+            if (scale < 1 - 1e-6) {
+                canvas.width = dw;
+                canvas.height = dh;
+
+                const ctx = canvas.getContext('2d', { willReadFrequently: false });
+
+                if (!ctx) {
+                    return;
+                }
+
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(video, 0, 0, dw, dh);
+                input = canvas;
             }
-
-            canvas.width = dw;
-            canvas.height = dh;
-
-            const ctx = canvas.getContext('2d', { willReadFrequently: false });
-
-            if (!ctx) {
-                return;
-            }
-
-            ctx.drawImage(video, 0, 0, dw, dh);
 
             lastDetectionAt = time;
             busy = true;
 
-            void model
-                .estimateFaces(canvas, false)
-                .then((predictions) => {
-                    console.log('predictions', predictions);
+            void detector
+                .estimateFaces(input, { flipHorizontal: false })
+                .then((predictions: Face[]) => {
+                    latestFacesRef.current = predictions;
+                    lastDetectionDimsRef.current = { dw, dh };
                 })
-                .catch((error) => {
+                .catch((error: unknown) => {
                     console.error(error);
                 })
                 .finally(() => {
@@ -198,19 +229,27 @@ export default function VideoEditor() {
             cancelled = true;
             cancelAnimationFrame(rafId);
         };
-    }, [model, isPlaying]);
+    }, [detector, isPlaying]);
 
     return (
         <>
             <Head title="Video Editor" />
             <div className="flex flex-col">
                 <div className="flex w-full flex-col gap-5 overflow-x-auto rounded-xl px-4 md:px-16">
+                    <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-neutral-300">
                     <video
                         ref={videoRef}
                         crossOrigin="anonymous"
-                        preload="metadata"
-                        className={cn("relative z-10 w-full rounded-xl border border-neutral-300 object-cover", metaLoaded ? 'hidden' : '')}
-                        src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
+                        playsInline
+                        preload="auto"
+                        className={cn(
+                            'h-full w-full object-cover',
+                            metaLoaded
+                                ? 'pointer-events-none absolute inset-0 z-0 opacity-0'
+                                : 'relative z-0',
+                        )}
+                        // src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
+                        src="/multiple.mp4"
                         onLoadedMetadata={(e) => {
                             console.log('Loaded metadata', e.currentTarget.videoWidth, e.currentTarget.videoHeight);
                             setDuration(e.currentTarget.duration);
@@ -221,14 +260,58 @@ export default function VideoEditor() {
                         onPlay={() => {
                             setIsPlaying(true);
                             const ctx = canvasRef.current?.getContext('2d');
+
                             function step() {
                                 const video = videoRef.current;
+                                const canvas = canvasRef.current;
 
-                                if (!video || video.paused || video.ended) {
+                                if (!video || !canvas || !ctx || video.paused || video.ended) {
                                     return;
                                 }
 
-                                ctx?.drawImage(video, 0, 0, dimensions.width, dimensions.height);
+                                const vw = video.videoWidth;
+                                const vh = video.videoHeight;
+
+                                if (!vw || !vh) {
+                                    requestAnimationFrame(step);
+
+                                    return;
+                                }
+
+                                const cw = canvas.width;
+                                const ch = canvas.height;
+
+                                if (!cw || !ch) {
+                                    requestAnimationFrame(step);
+
+                                    return;
+                                }
+
+                                ctx.drawImage(video, 0, 0, cw, ch);
+
+                                const { dw, dh } = lastDetectionDimsRef.current;
+                                const sx = dw > 0 ? cw / dw : cw / vw;
+                                const sy = dh > 0 ? ch / dh : ch / vh;
+
+                                ctx.strokeStyle = 'rgba(0, 255, 120, 0.95)';
+                                ctx.lineWidth = Math.max(2, Math.round(cw / 400));
+                                ctx.setLineDash([]);
+
+                                for (const face of latestFacesRef.current) {
+                                    const rect = getFaceRect(face);
+
+                                    if (!rect) {
+                                        continue;
+                                    }
+
+                                    ctx.strokeRect(
+                                        rect.x * sx,
+                                        rect.y * sy,
+                                        rect.w * sx,
+                                        rect.h * sy,
+                                    );
+                                }
+
                                 requestAnimationFrame(step);
                             }
 
@@ -243,10 +326,16 @@ export default function VideoEditor() {
                             setCurrentTime(e.currentTarget.currentTime);
                         }}
                     />
-                    <canvas className={cn(
-                        'border border-amber-400',
-                        metaLoaded ? 'block' : 'hidden'
-                    )} ref={canvasRef} width={dimensions.width} height={dimensions.height} />
+                    <canvas
+                        className={cn(
+                            'h-full w-full object-contain',
+                            metaLoaded ? 'relative z-10 block' : 'hidden',
+                        )}
+                        ref={canvasRef}
+                        width={dimensions.width}
+                        height={dimensions.height}
+                    />
+                    </div>
 
                     <div className="w-full flex flex-col gap-5 pt-5">
                         <div className="flex justify-between">
