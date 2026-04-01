@@ -11,6 +11,12 @@ import { create } from '@/routes/videos';
 
 const PX_PER_SECOND = 10;
 
+/** How often to run BlazeFace (ms). Video decode stays smooth; lower = more responsive faces, higher = cheaper. */
+const DETECTION_INTERVAL_MS = 120;
+
+/** Longer side of the frame fed into BlazeFace (pixels). Smaller = faster inference, slightly less accurate. */
+const MAX_DETECTION_SIDE = 320;
+
 export default function VideoEditor() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -27,6 +33,15 @@ export default function VideoEditor() {
     const [metaLoaded, setMetaLoaded] = useState(false);
 
     const [model, setModel] = useState<blazeface.BlazeFaceModel | null>(null);
+    const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+    useEffect(() => {
+        detectionCanvasRef.current = document.createElement('canvas');
+
+        return () => {
+            detectionCanvasRef.current = null;
+        };
+    }, []);
 
     const setTimeFromClientX = useCallback((clientX: number) => {
         const timeline = timelineRef.current;
@@ -73,13 +88,10 @@ export default function VideoEditor() {
 
         (async () => {
             try {
-                // WebGL uploads HTMLVideoElement frames via texSubImage2D; cross-origin video without
-                // CORS taints the source and throws SecurityError. CPU avoids that GPU path (slower).
+                // Prefer WebGL for faster inference; fall back to CPU if WebGL fails (e.g. tainted source).
                 const ok =
-                    (await tf.setBackend('cpu')) ||
-                    (await tf.setBackend('webgl'));
+                    (await tf.setBackend('webgl')) || (await tf.setBackend('cpu'));
 
-                console.log('ok', ok);
                 if (!ok || cancelled) {
                     return;
                 }
@@ -113,34 +125,74 @@ export default function VideoEditor() {
 
         let cancelled = false;
         let rafId = 0;
+        let lastDetectionAt = 0;
+        let busy = false;
 
-        const run = async () => {
-            while (!cancelled) {
-                await new Promise<void>((resolve) => {
-                    rafId = requestAnimationFrame(() => resolve());
-                });
-
-                if (cancelled) {
-                    break;
-                }
-
-                const video = videoRef.current;
-
-                if (!video || video.paused || video.ended) {
-                    continue;
-                }
-
-                try {
-                    const predictions = await model.estimateFaces(video, false);
-
-                    // console.log(predictions);
-                } catch (error) {
-                    console.error(error);
-                }
+        const tick = (time: number) => {
+            if (cancelled) {
+                return;
             }
+
+            rafId = requestAnimationFrame(tick);
+
+            if (busy) {
+                return;
+            }
+
+            const video = videoRef.current;
+            const canvas = detectionCanvasRef.current;
+
+            if (!video || !canvas || video.paused || video.ended) {
+                return;
+            }
+
+            if (time - lastDetectionAt < DETECTION_INTERVAL_MS) {
+                return;
+            }
+
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+
+            if (!vw || !vh) {
+                return;
+            }
+
+            let dw = MAX_DETECTION_SIDE;
+            let dh = Math.round((MAX_DETECTION_SIDE * vh) / vw);
+
+            if (vh > vw) {
+                dh = MAX_DETECTION_SIDE;
+                dw = Math.round((MAX_DETECTION_SIDE * vw) / vh);
+            }
+
+            canvas.width = dw;
+            canvas.height = dh;
+
+            const ctx = canvas.getContext('2d', { willReadFrequently: false });
+
+            if (!ctx) {
+                return;
+            }
+
+            ctx.drawImage(video, 0, 0, dw, dh);
+
+            lastDetectionAt = time;
+            busy = true;
+
+            void model
+                .estimateFaces(canvas, false)
+                .then((predictions) => {
+                    console.log('predictions', predictions);
+                })
+                .catch((error) => {
+                    console.error(error);
+                })
+                .finally(() => {
+                    busy = false;
+                });
         };
 
-        void run();
+        rafId = requestAnimationFrame(tick);
 
         return () => {
             cancelled = true;
