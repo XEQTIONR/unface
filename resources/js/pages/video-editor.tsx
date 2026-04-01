@@ -1,9 +1,13 @@
 import { Head } from '@inertiajs/react';
+import '@tensorflow/tfjs-backend-cpu';
+import '@tensorflow/tfjs-backend-webgl';
+import * as tf from '@tensorflow/tfjs';
+import * as blazeface from '@tensorflow-models/blazeface';
 import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { create } from '@/routes/videos';
 import { cn } from '@/lib/utils';
+import { create } from '@/routes/videos';
 
 const PX_PER_SECOND = 10;
 
@@ -21,6 +25,8 @@ export default function VideoEditor() {
     const [zoomLevel, setZoomLevel] = useState(1);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const [metaLoaded, setMetaLoaded] = useState(false);
+
+    const [model, setModel] = useState<blazeface.BlazeFaceModel | null>(null);
 
     const setTimeFromClientX = useCallback((clientX: number) => {
         const timeline = timelineRef.current;
@@ -54,6 +60,94 @@ export default function VideoEditor() {
         return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toFixed(0).toString().padStart(2, '0')}`;
     };
 
+    useEffect(() => {
+
+        const v = videoRef.current;
+
+        if (v) {
+            v.crossOrigin = 'anonymous';
+            v.load();
+        }
+        
+        let cancelled = false;
+
+        (async () => {
+            try {
+                // WebGL uploads HTMLVideoElement frames via texSubImage2D; cross-origin video without
+                // CORS taints the source and throws SecurityError. CPU avoids that GPU path (slower).
+                const ok =
+                    (await tf.setBackend('cpu')) ||
+                    (await tf.setBackend('webgl'));
+
+                console.log('ok', ok);
+                if (!ok || cancelled) {
+                    return;
+                }
+
+                await tf.ready();
+
+                if (cancelled) {
+                    return;
+                }
+
+                const loaded = await blazeface.load();
+
+                if (!cancelled) {
+                    setModel(loaded);
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+
+    useEffect(() => {
+        if (!model || !isPlaying) {
+            return;
+        }
+
+        let cancelled = false;
+        let rafId = 0;
+
+        const run = async () => {
+            while (!cancelled) {
+                await new Promise<void>((resolve) => {
+                    rafId = requestAnimationFrame(() => resolve());
+                });
+
+                if (cancelled) {
+                    break;
+                }
+
+                const video = videoRef.current;
+
+                if (!video || video.paused || video.ended) {
+                    continue;
+                }
+
+                try {
+                    const predictions = await model.estimateFaces(video, false);
+
+                    // console.log(predictions);
+                } catch (error) {
+                    console.error(error);
+                }
+            }
+        };
+
+        void run();
+
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(rafId);
+        };
+    }, [model, isPlaying]);
+
     return (
         <>
             <Head title="Video Editor" />
@@ -61,28 +155,32 @@ export default function VideoEditor() {
                 <div className="flex w-full flex-col gap-5 overflow-x-auto rounded-xl px-4 md:px-16">
                     <video
                         ref={videoRef}
+                        crossOrigin="anonymous"
                         preload="metadata"
                         className={cn("relative z-10 w-full rounded-xl border border-neutral-300 object-cover", metaLoaded ? 'hidden' : '')}
                         src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
                         onLoadedMetadata={(e) => {
-                            console.log(e.currentTarget.videoWidth, e.currentTarget.videoHeight);
+                            console.log('Loaded metadata', e.currentTarget.videoWidth, e.currentTarget.videoHeight);
                             setDuration(e.currentTarget.duration);
                             setVideoLength(e.currentTarget.duration);
                             setDimensions({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight });
                             setMetaLoaded(true);
                         }}
-                        onPlay={(e) => {
-                            setIsPlaying(true)
+                        onPlay={() => {
+                            setIsPlaying(true);
                             const ctx = canvasRef.current?.getContext('2d');
                             function step() {
-                                if (videoRef.current?.paused || videoRef.current?.ended) {
-                                    return
+                                const video = videoRef.current;
+
+                                if (!video || video.paused || video.ended) {
+                                    return;
                                 }
 
-                                ctx?.drawImage(videoRef.current, 0, 0, dimensions.width, dimensions.height);
+                                ctx?.drawImage(video, 0, 0, dimensions.width, dimensions.height);
                                 requestAnimationFrame(step);
                             }
-                              requestAnimationFrame(step);
+
+                            requestAnimationFrame(step);
                         }}
                         onPause={() => setIsPlaying(false)}
                         onTimeUpdate={(e) => {
