@@ -9,7 +9,6 @@ import { useCallback, useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { create } from '@/routes/videos';
-import type { FaceFrame, IdentityFrame } from '@/types/video';
 
 const PX_PER_SECOND = 10;
 
@@ -22,7 +21,7 @@ const DETECTION_INTERVAL_MS = 50;
  */
 const MAX_DETECTION_LONG_SIDE = 720
 
-const DELTA = 1.0
+const THRESHOLD = 15
 
 /** SSD MobileNet v1 weights (same family as face-api.js). */
 const FACE_API_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model'
@@ -80,7 +79,7 @@ const names = useRef([
     const [faceApiReady, setFaceApiReady] = useState(false)
     const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const latestFacesRef = useRef<FaceBox[]>([])
-    const [faces, setFaces] = useState<(NameX[])>([])
+    const [faces, setFaces] = useState<Set<string>>(new Set([]))
     // const [chars, setChars] = useState<(NameX[])>([])
     const chars = useRef<NameX[]>([])
     /** Detection box coords are in detection-canvas pixels (dw×dh), not full video pixels. */
@@ -289,8 +288,8 @@ const names = useRef([
                                 ? 'pointer-events-none absolute inset-0 z-0 opacity-0'
                                 : 'relative z-0',
                         )}
-                        // src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
-                        src="/multiple.mp4"
+                        src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
+                        // src="/multiple.mp4"
                         onLoadedMetadata={(e) => {
                             console.log('Loaded metadata', e.currentTarget.videoWidth, e.currentTarget.videoHeight);
                             setDuration(e.currentTarget.duration);
@@ -344,7 +343,6 @@ const names = useRef([
                                 let ns: NameX[] = [...chars.current];
                                 let comparedTo: NameX[] = [...chars.current];
                                 //console.log(chars)
-                                const THRESHOLD = 15;
                                 
                                 for (const rect of latestFacesRef.current.sort((a, b) => a.x - b.x)) {
                                     ctx.strokeRect(
@@ -387,15 +385,18 @@ const names = useRef([
                                     // ctx.fillText(names[i], rect.x * sx, rect.y * sy)
                                     //ctx.fillText(`${rect.x.toFixed(0)}`, rect.x * sx, rect.y * sy)
                                 }
+
+                                chars.current = ns
+                                const set = new Set(ns.map((n) => n.name))
                                 
-                                //console.log('setting chars', ns)
+                                if (!(faces.isSubsetOf(set) && set.isSubsetOf(faces))) {
+                                    setFaces(set)
+                                }
 
-                                chars.current = ns;
-
-                                requestAnimationFrame(step);
+                                requestAnimationFrame(step)
                             }
 
-                            requestAnimationFrame(step);
+                            requestAnimationFrame(step)
                         }}
                         onPause={() => setIsPlaying(false)}
                         onTimeUpdate={(e) => {
@@ -521,7 +522,8 @@ const names = useRef([
                     <div className='bg-neutral-800/50 flex  gap-2 items-center justify-center py-6 px-6 rounded'>
                         <div className='w-2/3  p-5'>
                             <h3 className=" font-extrabold uppercase">Face Tracking</h3>
-                            <span className="text-sm font-medium text-muted-foreground">Track faces live in the video</span>
+                            {/* <span className="text-sm font-medium text-muted-foreground">Track faces live in the video</span> */}
+                            <span className="text-sm font-medium text-muted-foreground">{[...faces].sort().join(', ')}</span>
                         </div>
                         <div className='flex w-1/3 gap-3 justify-center'>
                             <div className='rounded-lg bg-neutral-800 flex flex-col gap-2 items-center justify-center size-20 aspect-square'>
