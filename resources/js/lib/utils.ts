@@ -11,13 +11,15 @@ export function toUrl(url: NonNullable<InertiaLinkProps['href']>): string {
     return typeof url === 'string' ? url : url.url;
 }
 
-export const fastHash = (str: string, modulo: number = 6) => {
+export const hashToRange = (str: string, n: number) => {
     let hash = 0;
-
+    console.log('str', str);
+    
     for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0; // Convert to 32bit integer
+        hash = (hash * 31 + str.charCodeAt(i)) | 0; // keep 32-bit int
     }
 
-    return ((hash >>> 0) % modulo) + 1;
-  };
+    hash = Math.abs(hash);
+
+    return (hash % n) + 1; // range: 1..n
+}

@@ -7,7 +7,7 @@ import * as faceapi from '@vladmandic/face-api';
 import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { cn, fastHash } from '@/lib/utils';
+import { cn, fastHash, hashToRange } from '@/lib/utils';
 import { create } from '@/routes/videos';
 
 const PX_PER_SECOND = 10;
@@ -21,7 +21,7 @@ const DETECTION_INTERVAL_MS = 50;
  */
 const MAX_DETECTION_LONG_SIDE = 720
 
-const THRESHOLD = 15
+const THRESHOLD = 12
 
 /** SSD MobileNet v1 weights (same family as face-api.js). */
 const FACE_API_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model'
@@ -33,6 +33,7 @@ import type { FaceBox, FaceApiDetection } from '@/types/video'
 interface NameX {
     name: string
     x: number
+    y: number
 }
 
 const removeNumberOne = (num: number) => {
@@ -67,6 +68,12 @@ const names = useRef([
     'Ryan',
     'Samuel',
     'Trent',
+    'Uma',
+    'Victoria',
+    'William',
+    'Xavier',
+    'Yasmine',
+    'Zachary',
 ])
 
 
@@ -89,7 +96,6 @@ const names = useRef([
     const latestFacesRef = useRef<FaceBox[]>([])
     const [faces, setFaces] = useState<Set<string>>(new Set([]))
     const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
-    // const [chars, setChars] = useState<(NameX[])>([])
     const chars = useRef<NameX[]>([])
     /** Detection box coords are in detection-canvas pixels (dw×dh), not full video pixels. */
     const lastDetectionDimsRef = useRef({ dw: 0, dh: 0 })
@@ -280,6 +286,125 @@ const names = useRef([
         };
     }, [faceApiReady, isPlaying]);
 
+    const onPlay = () => {
+        setIsPlaying(true);
+        const ctx = canvasRef.current?.getContext('2d');
+
+        function step() {
+            //console.log('step', chars)
+            const video = videoRef.current;
+            const canvas = canvasRef.current;
+
+            if (!video || !canvas || !ctx || video.paused || video.ended) {
+                return;
+            }
+
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+
+            if (!vw || !vh) {
+                requestAnimationFrame(step);
+
+                return;
+            }
+
+            const cw = canvas.width;
+            const ch = canvas.height;
+
+            if (!cw || !ch) {
+                requestAnimationFrame(step);
+
+                return;
+            }
+
+            ctx.drawImage(video, 0, 0, cw, ch);
+
+            const { dw, dh } = lastDetectionDimsRef.current;
+            const sx = dw > 0 ? cw / dw : cw / vw;
+            const sy = dh > 0 ? ch / dh : ch / vh;
+
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.95)';
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.95)';
+            ctx.font = '60px Arial';
+            ctx.lineWidth = Math.max(2, Math.round(cw / 400));
+            ctx.setLineDash([]);
+            
+            let ns: NameX[] = [...chars.current];
+            const currentNames: string[] = []
+            let comparedTo: NameX[] = [...chars.current];
+            
+            if (latestFacesRef.current.length > 0) {
+                for (const rect of latestFacesRef.current.sort((a, b) => a.x - b.x)) {
+                    ctx.strokeRect(
+                        rect.x * sx,
+                        rect.y * sy,
+                        rect.w * sx,
+                        rect.h * sy,
+                    );
+
+                    if (chars.current.length === 0) { // no characters yet
+
+                        
+                        const n = names.current[ns.length % names.current.length] + Math.floor(Math.random() * 1000)
+                        ctx.fillText(n, rect.x * sx, rect.y * sy)
+                        ns.push({
+                            name: n,
+                            x: rect.x,
+                            y: rect.y
+                        })
+
+                        currentNames.push(n)
+                        
+                    } else { // compare with existing characters
+                        const found = comparedTo.find(({x, y}) => ((x - rect.x) ** 2 + (y - rect.y) ** 2) < THRESHOLD ** 2)
+
+                        if (found) {
+                            ctx.fillText(found.name, rect.x * sx, rect.y * sy)
+                            ns = ns.map((n) => {
+                                if (n.name === found.name) {
+                                    n.x = rect.x;
+                                    n.y = rect.y;
+                                }
+
+                                return n
+                            })
+                            currentNames.push(found.name)
+                            comparedTo = comparedTo.filter(({x, y, name}) => x !== found.x && y !== found.y && name !== found.name);
+                        } else {
+                            const n = names.current[ns.length % names.current.length] + Math.floor(Math.random() * 1000) 
+                            ctx.fillText(n, rect.x * sx, rect.y * sy)
+                            ns.push({
+                                name: n,
+                                x: rect.x,
+                                y: rect.y
+                            })
+                            currentNames.push(n)
+                        }
+                    }
+                }
+
+                chars.current = ns
+                const set = new Set(ns.map((n) => n.name))
+                const set2 = new Set(currentNames)
+                
+                if (!(faces.isSubsetOf(set) && set.isSubsetOf(faces))) {
+                    setFaces(set)
+                }
+
+                if (!(currentFaces.isSubsetOf(set2) && set2.isSubsetOf(currentFaces))) {
+                    setCurrentFaces(set2)
+                }
+            } else {
+                setCurrentFaces(new Set([]))
+            }
+                
+
+            requestAnimationFrame(step)
+        }
+
+        requestAnimationFrame(step)
+    }
+
     return (
         <>
             <Head title="Video Editor" />
@@ -306,124 +431,7 @@ const names = useRef([
                             setDimensions({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight });
                             setMetaLoaded(true);
                         }}
-                        onPlay={() => {
-                            setIsPlaying(true);
-                            const ctx = canvasRef.current?.getContext('2d');
-
-                            function step() {
-                                //console.log('step', chars)
-                                const video = videoRef.current;
-                                const canvas = canvasRef.current;
-
-                                if (!video || !canvas || !ctx || video.paused || video.ended) {
-                                    return;
-                                }
-
-                                const vw = video.videoWidth;
-                                const vh = video.videoHeight;
-
-                                if (!vw || !vh) {
-                                    requestAnimationFrame(step);
-
-                                    return;
-                                }
-
-                                const cw = canvas.width;
-                                const ch = canvas.height;
-
-                                if (!cw || !ch) {
-                                    requestAnimationFrame(step);
-
-                                    return;
-                                }
-
-                                ctx.drawImage(video, 0, 0, cw, ch);
-
-                                const { dw, dh } = lastDetectionDimsRef.current;
-                                const sx = dw > 0 ? cw / dw : cw / vw;
-                                const sy = dh > 0 ? ch / dh : ch / vh;
-
-                                ctx.strokeStyle = 'rgba(0, 255, 255, 0.95)';
-                                ctx.fillStyle = 'rgba(0, 255, 255, 0.95)';
-                                ctx.font = '60px Arial';
-                                ctx.lineWidth = Math.max(2, Math.round(cw / 400));
-                                ctx.setLineDash([]);
-                                
-                                let ns: NameX[] = [...chars.current];
-                                const currentNames: string[] = []
-                                let comparedTo: NameX[] = [...chars.current];
-                                //console.log(chars)
-                                
-                                if (latestFacesRef.current.length > 0) {
-                                    for (const rect of latestFacesRef.current.sort((a, b) => a.x - b.x)) {
-                                        ctx.strokeRect(
-                                            rect.x * sx,
-                                            rect.y * sy,
-                                            rect.w * sx,
-                                            rect.h * sy,
-                                        );
-
-                                        if (chars.current.length === 0) { // no characters yet
-                                            ctx.fillText(names.current[ns.length], rect.x * sx, rect.y * sy)
-                                            const n = names.current[ns.length]
-                                            ns.push({
-                                                name: n,
-                                                x: rect.x
-                                            })
-
-                                            currentNames.push(n)
-                                            
-                                        } else { // compare with existing characters
-                                            const c = comparedTo.find(({x}) => (Math.abs(x - rect.x) < THRESHOLD))
-
-                                            if (c) {
-                                                //console.log('found;')
-                                                ctx.fillText(c.name, rect.x * sx, rect.y * sy)
-                                                ns = ns.map((n) => {
-                                                    if (n.name === c.name) {
-                                                        n.x = rect.x;
-                                                    }
-
-                                                    return n
-                                                })
-                                                currentNames.push(c.name)
-                                                comparedTo = comparedTo.filter(({x, name}) => x !== c.x && name !== c.name);
-                                            } else { 
-                                                ctx.fillText(names.current[ns.length], rect.x * sx, rect.y * sy)
-                                                const n = names.current[ns.length]
-                                                ns.push({
-                                                    name: n,
-                                                    x: rect.x
-                                                })
-                                                currentNames.push(n)
-                                            }
-                                        }
-                                        
-                                        // ctx.fillText(names[i], rect.x * sx, rect.y * sy)
-                                        //ctx.fillText(`${rect.x.toFixed(0)}`, rect.x * sx, rect.y * sy)
-                                    }
-
-                                    chars.current = ns
-                                    const set = new Set(ns.map((n) => n.name))
-                                    const set2 = new Set(currentNames)
-                                    
-                                    if (!(faces.isSubsetOf(set) && set.isSubsetOf(faces))) {
-                                        setFaces(set)
-                                    }
-
-                                    if (!(currentFaces.isSubsetOf(set2) && set2.isSubsetOf(currentFaces))) {
-                                        setCurrentFaces(set2)
-                                    }
-                                } else {
-                                    setCurrentFaces(new Set([]))
-                                }
-                                    
-
-                                requestAnimationFrame(step)
-                            }
-
-                            requestAnimationFrame(step)
-                        }}
+                        onPlay={() => onPlay()}
                         onPause={() => setIsPlaying(false)}
                         onTimeUpdate={(e) => {
                             if (isScrubbingRef.current) {
@@ -570,12 +578,8 @@ const names = useRef([
                                         "material-symbols-outlined px-2.5 py-2 rounded flex items-center justify-center text-4xl!",
                                         currentFaces.has(name) ? 'bg-teal-600' : "bg-neutral-600"
                                     )}>
-                                        face{removeNumberOne(fastHash(name))}
+                                        face{removeNumberOne(hashToRange(name, 6))}
                                     </span>
-                                    {/* <div className={cn(
-                                        'size-10',
-                                        currentFaces.has(name) ? 'bg-teal-400' : 'bg-foreground'
-                                    )} /> */}
                                     <span className='text-sm font-medium text-muted-foreground'>{name}</span>
                                 </div>
                             ))}
