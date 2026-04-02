@@ -7,7 +7,7 @@ import * as faceapi from '@vladmandic/face-api';
 import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, fastHash } from '@/lib/utils';
 import { create } from '@/routes/videos';
 
 const PX_PER_SECOND = 10;
@@ -33,6 +33,14 @@ import type { FaceBox, FaceApiDetection } from '@/types/video'
 interface NameX {
     name: string
     x: number
+}
+
+const removeNumberOne = (num: number) => {
+    if (num === 1) {
+        return ''
+    }
+    
+    return '_' + num.toString()
 }
 
 export default function VideoEditor() {
@@ -80,6 +88,7 @@ const names = useRef([
     const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const latestFacesRef = useRef<FaceBox[]>([])
     const [faces, setFaces] = useState<Set<string>>(new Set([]))
+    const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
     // const [chars, setChars] = useState<(NameX[])>([])
     const chars = useRef<NameX[]>([])
     /** Detection box coords are in detection-canvas pixels (dw×dh), not full video pixels. */
@@ -341,57 +350,74 @@ const names = useRef([
                                 ctx.setLineDash([]);
                                 
                                 let ns: NameX[] = [...chars.current];
+                                const currentNames: string[] = []
                                 let comparedTo: NameX[] = [...chars.current];
                                 //console.log(chars)
                                 
-                                for (const rect of latestFacesRef.current.sort((a, b) => a.x - b.x)) {
-                                    ctx.strokeRect(
-                                        rect.x * sx,
-                                        rect.y * sy,
-                                        rect.w * sx,
-                                        rect.h * sy,
-                                    );
+                                if (latestFacesRef.current.length > 0) {
+                                    for (const rect of latestFacesRef.current.sort((a, b) => a.x - b.x)) {
+                                        ctx.strokeRect(
+                                            rect.x * sx,
+                                            rect.y * sy,
+                                            rect.w * sx,
+                                            rect.h * sy,
+                                        );
 
-                                    if (chars.current.length === 0) { // no characters yet
-                                        ctx.fillText(names.current[ns.length], rect.x * sx, rect.y * sy)
-                                        ns.push({
-                                            name: names.current[ns.length],
-                                            x: rect.x
-                                        })
-                                        
-                                    } else { // compare with existing characters
-                                        const c = comparedTo.find(({x}) => (Math.abs(x - rect.x) < THRESHOLD))
-
-                                        if (c) {
-                                            //console.log('found;')
-                                            ctx.fillText(c.name, rect.x * sx, rect.y * sy)
-                                            ns = ns.map((n) => {
-                                                if (n.name === c.name) {
-                                                    n.x = rect.x;
-                                                }
-
-                                                return n
-                                            })
-                                            comparedTo = comparedTo.filter(({x, name}) => x !== c.x && name !== c.name);
-                                        } else { 
+                                        if (chars.current.length === 0) { // no characters yet
                                             ctx.fillText(names.current[ns.length], rect.x * sx, rect.y * sy)
+                                            const n = names.current[ns.length]
                                             ns.push({
-                                                name: names.current[ns.length],
+                                                name: n,
                                                 x: rect.x
                                             })
-                                        }
-                                    }
-                                    
-                                    // ctx.fillText(names[i], rect.x * sx, rect.y * sy)
-                                    //ctx.fillText(`${rect.x.toFixed(0)}`, rect.x * sx, rect.y * sy)
-                                }
 
-                                chars.current = ns
-                                const set = new Set(ns.map((n) => n.name))
-                                
-                                if (!(faces.isSubsetOf(set) && set.isSubsetOf(faces))) {
-                                    setFaces(set)
+                                            currentNames.push(n)
+                                            
+                                        } else { // compare with existing characters
+                                            const c = comparedTo.find(({x}) => (Math.abs(x - rect.x) < THRESHOLD))
+
+                                            if (c) {
+                                                //console.log('found;')
+                                                ctx.fillText(c.name, rect.x * sx, rect.y * sy)
+                                                ns = ns.map((n) => {
+                                                    if (n.name === c.name) {
+                                                        n.x = rect.x;
+                                                    }
+
+                                                    return n
+                                                })
+                                                currentNames.push(c.name)
+                                                comparedTo = comparedTo.filter(({x, name}) => x !== c.x && name !== c.name);
+                                            } else { 
+                                                ctx.fillText(names.current[ns.length], rect.x * sx, rect.y * sy)
+                                                const n = names.current[ns.length]
+                                                ns.push({
+                                                    name: n,
+                                                    x: rect.x
+                                                })
+                                                currentNames.push(n)
+                                            }
+                                        }
+                                        
+                                        // ctx.fillText(names[i], rect.x * sx, rect.y * sy)
+                                        //ctx.fillText(`${rect.x.toFixed(0)}`, rect.x * sx, rect.y * sy)
+                                    }
+
+                                    chars.current = ns
+                                    const set = new Set(ns.map((n) => n.name))
+                                    const set2 = new Set(currentNames)
+                                    
+                                    if (!(faces.isSubsetOf(set) && set.isSubsetOf(faces))) {
+                                        setFaces(set)
+                                    }
+
+                                    if (!(currentFaces.isSubsetOf(set2) && set2.isSubsetOf(currentFaces))) {
+                                        setCurrentFaces(set2)
+                                    }
+                                } else {
+                                    setCurrentFaces(new Set([]))
                                 }
+                                    
 
                                 requestAnimationFrame(step)
                             }
@@ -518,22 +544,41 @@ const names = useRef([
                         
                     </div>
                 </div>
-                <div className="grid grid-cols-2 items-start gap-5 w-full h-24 p-4 md:p-16 mb-60">
-                    <div className='bg-neutral-800/50 flex  gap-2 items-center justify-center py-6 px-6 rounded'>
-                        <div className='w-2/3  p-5'>
-                            <h3 className=" font-extrabold uppercase">Face Tracking</h3>
-                            {/* <span className="text-sm font-medium text-muted-foreground">Track faces live in the video</span> */}
-                            <span className="text-sm font-medium text-muted-foreground">{[...faces].sort().join(', ')}</span>
+                <div className="grid grid-cols-2 items-start gap-5 w-full p-4 md:p-16 mb-10">
+                    <div className='bg-neutral-800/50 flex flex-col gap-2 py-6 px-6 rounded'>
+                        <div className="w-full flex items-center justify-center">
+                            <div className='w-2/3  p-5'>
+                                <h3 className=" font-extrabold uppercase">Face Tracking</h3>
+                                <span className="text-sm font-medium text-muted-foreground">Track faces live in the video</span>
+                                
+                            </div>
+                            <div className='flex w-1/3 gap-3 justify-center'>
+                                <div className='rounded-lg bg-neutral-800 flex flex-col gap-2 items-center justify-center size-20 aspect-square'>
+                                    <Users size={20} />
+                                    <span className='text-xs font-bold uppercase'>Remove</span>
+                                </div>
+                                <div className='rounded-lg bg-neutral-800 flex flex-col gap-2 items-center justify-center size-20 aspect-square'>
+                                    <Users size={20} />
+                                    <span className='text-xs font-bold uppercase'>Sticker</span>
+                                </div>
+                            </div>
                         </div>
-                        <div className='flex w-1/3 gap-3 justify-center'>
-                            <div className='rounded-lg bg-neutral-800 flex flex-col gap-2 items-center justify-center size-20 aspect-square'>
-                                <Users size={20} />
-                                <span className='text-xs font-bold uppercase'>Remove</span>
-                            </div>
-                            <div className='rounded-lg bg-neutral-800 flex flex-col gap-2 items-center justify-center size-20 aspect-square'>
-                                <Users size={20} />
-                                <span className='text-xs font-bold uppercase'>Sticker</span>
-                            </div>
+                        <div className="flex flex-col gap-2 px-4 h-64 overflow-y-scroll">
+                            {[...faces].sort().map((name) => (
+                                <div key={name} className='flex items-center gap-5'>
+                                    <span className={cn(
+                                        "material-symbols-outlined px-2.5 py-2 rounded flex items-center justify-center text-4xl!",
+                                        currentFaces.has(name) ? 'bg-teal-600' : "bg-neutral-600"
+                                    )}>
+                                        face{removeNumberOne(fastHash(name))}
+                                    </span>
+                                    {/* <div className={cn(
+                                        'size-10',
+                                        currentFaces.has(name) ? 'bg-teal-400' : 'bg-foreground'
+                                    )} /> */}
+                                    <span className='text-sm font-medium text-muted-foreground'>{name}</span>
+                                </div>
+                            ))}
                         </div>
                     </div>
                     <div className='bg-neutral-800/50 flex flex-col gap-2 justify-center px-8 py-8 rounded'>
