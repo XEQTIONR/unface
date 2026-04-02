@@ -29,7 +29,40 @@ const FACE_API_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/m
 
 import type { FaceBox, FaceApiDetection } from '@/types/video'
 
+
+
+interface NameX {
+    name: string
+    x: number
+}
+
 export default function VideoEditor() {
+
+
+const names = useRef([
+    'Abagail',
+    'Bailey',
+    'Cameron',
+    'Dakota',
+    'Ethan',
+    'Finn',
+    'Grace',
+    'Henry',
+    'Isabella',
+    'Jacob',
+    'Kiara',
+    'Liam',
+    'Mary',
+    'Natalie',
+    'Oliver',
+    'Paisley',
+    'Quinn',
+    'Ryan',
+    'Samuel',
+    'Trent',
+])
+
+
     const videoRef = useRef<HTMLVideoElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const timelineRef = useRef<HTMLDivElement>(null)
@@ -47,19 +80,11 @@ export default function VideoEditor() {
     const [faceApiReady, setFaceApiReady] = useState(false)
     const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const latestFacesRef = useRef<FaceBox[]>([])
-    const [faces, setFaces] = useState([])
+    const [faces, setFaces] = useState<(NameX[])>([])
+    // const [chars, setChars] = useState<(NameX[])>([])
+    const chars = useRef<NameX[]>([])
     /** Detection box coords are in detection-canvas pixels (dw×dh), not full video pixels. */
     const lastDetectionDimsRef = useRef({ dw: 0, dh: 0 })
-
-    const worker = useRef<Worker | null>(new Worker(new URL('../charDetectWorker.ts', import.meta.url)))
-
-    useEffect(() => {
-        if (worker.current) {
-            worker.current.onmessage = (event: MessageEvent<IdentityFrame>) => {
-                console.log(event.data);
-            }
-        }
-    }, [])
 
     useEffect(() => {
         detectionCanvasRef.current = document.createElement('canvas')
@@ -228,14 +253,7 @@ export default function VideoEditor() {
                         h: d.box.height,
                     }));
                     
-                    const f = {
-                        faces: fs,
-                        time: t
-                    }
-                    //console.log('x', f);
-                    worker.current?.postMessage(f);
                     latestFacesRef.current = fs
-                    //setFaces((f) => [...f, x]);
                     lastDetectionDimsRef.current = { dw, dh };
                 })
                 .catch((error: unknown) => {
@@ -285,6 +303,7 @@ export default function VideoEditor() {
                             const ctx = canvasRef.current?.getContext('2d');
 
                             function step() {
+                                //console.log('step', chars)
                                 const video = videoRef.current;
                                 const canvas = canvasRef.current;
 
@@ -316,20 +335,62 @@ export default function VideoEditor() {
                                 const sx = dw > 0 ? cw / dw : cw / vw;
                                 const sy = dh > 0 ? ch / dh : ch / vh;
 
-                                // ctx.strokeStyle = 'rgba(0, 255, 120, 0.95)';
-                                ctx.fillStyle = 'rgba(0, 255, 120, 0.95)';
+                                ctx.strokeStyle = 'rgba(0, 255, 255, 0.95)';
+                                ctx.fillStyle = 'rgba(0, 255, 255, 0.95)';
+                                ctx.font = '60px Arial';
                                 ctx.lineWidth = Math.max(2, Math.round(cw / 400));
                                 ctx.setLineDash([]);
-
-                                for (const rect of latestFacesRef.current) {
-                                    ctx.fillRect(
+                                
+                                let ns: NameX[] = [...chars.current];
+                                let comparedTo: NameX[] = [...chars.current];
+                                //console.log(chars)
+                                const THRESHOLD = 15;
+                                
+                                for (const rect of latestFacesRef.current.sort((a, b) => a.x - b.x)) {
+                                    ctx.strokeRect(
                                         rect.x * sx,
                                         rect.y * sy,
                                         rect.w * sx,
                                         rect.h * sy,
                                     );
+
+                                    if (chars.current.length === 0) { // no characters yet
+                                        ctx.fillText(names.current[ns.length], rect.x * sx, rect.y * sy)
+                                        ns.push({
+                                            name: names.current[ns.length],
+                                            x: rect.x
+                                        })
+                                        
+                                    } else { // compare with existing characters
+                                        const c = comparedTo.find(({x}) => (Math.abs(x - rect.x) < THRESHOLD))
+
+                                        if (c) {
+                                            //console.log('found;')
+                                            ctx.fillText(c.name, rect.x * sx, rect.y * sy)
+                                            ns = ns.map((n) => {
+                                                if (n.name === c.name) {
+                                                    n.x = rect.x;
+                                                }
+
+                                                return n
+                                            })
+                                            comparedTo = comparedTo.filter(({x, name}) => x !== c.x && name !== c.name);
+                                        } else { 
+                                            ctx.fillText(names.current[ns.length], rect.x * sx, rect.y * sy)
+                                            ns.push({
+                                                name: names.current[ns.length],
+                                                x: rect.x
+                                            })
+                                        }
+                                    }
                                     
+                                    // ctx.fillText(names[i], rect.x * sx, rect.y * sy)
+                                    //ctx.fillText(`${rect.x.toFixed(0)}`, rect.x * sx, rect.y * sy)
                                 }
+                                
+                                //console.log('setting chars', ns)
+
+                                chars.current = ns;
 
                                 requestAnimationFrame(step);
                             }
