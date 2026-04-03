@@ -4,6 +4,7 @@ import '@tensorflow/tfjs-backend-webgl';
 import * as tf from '@tensorflow/tfjs';
 /** Maintained face-api.js–compatible API for TensorFlow.js 4.x (original `face-api.js` npm targets old TFJS). */
 import * as faceapi from '@vladmandic/face-api';
+// import { FaceApiDetection } from '@vladmandic/face-api';
 import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -26,7 +27,7 @@ const THRESHOLD = 12
 /** SSD MobileNet v1 weights (same family as face-api.js). */
 const FACE_API_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model'
 
-import type { FaceBox, FaceApiDetection, IdentityBox } from '@/types/video'
+import type { FaceApiDetection, FaceBox, IdentityBox } from '@/types/video'
 
 
 const removeNumberOne = (num: number) => {
@@ -243,7 +244,7 @@ const names = useRef([
 
             lastDetectionAt = time;
             busy = true;
-            const t = video.currentTime;
+
             void faceapi
                 .detectAllFaces(
                     input,
@@ -252,16 +253,18 @@ const names = useRef([
                         maxResults: 20,
                     }),
                 )
-                .then((detections: FaceApiDetection[]) => {
-                    const fs: FaceBox[] = detections.map((d) => ({
+                .then((detections) => {
+                    const fs: FaceBox[] = detections.map((d: FaceApiDetection) => ({
                         x: d.box.x,
                         y: d.box.y,
                         w: d.box.width,
                         h: d.box.height,
                     }));
-                    
+
                     latestFacesRef.current = fs
-                    lastDetectionDimsRef.current = { dw, dh };
+                    lastDetectionDimsRef.current = { dw, dh }
+
+                    return detections
                 })
                 .catch((error: unknown) => {
                     console.error(error);
