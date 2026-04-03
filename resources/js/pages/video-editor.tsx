@@ -4,7 +4,7 @@ import '@tensorflow/tfjs-backend-webgl';
 import * as tf from '@tensorflow/tfjs';
 /** Maintained face-api.js–compatible API for TensorFlow.js 4.x (original `face-api.js` npm targets old TFJS). */
 import * as faceapi from '@vladmandic/face-api';
-// import { FaceApiDetection } from '@vladmandic/face-api';
+import type { FaceDetection } from '@vladmandic/face-api';
 import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -27,7 +27,7 @@ const THRESHOLD = 12
 /** SSD MobileNet v1 weights (same family as face-api.js). */
 const FACE_API_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model'
 
-import type { FaceApiDetection, FaceBox, IdentityBox } from '@/types/video'
+import type { FaceBox, IdentityBox, IdentityFrame } from '@/types/video'
 
 
 const removeNumberOne = (num: number) => {
@@ -90,10 +90,12 @@ const names = useRef([
     const latestFacesRef = useRef<FaceBox[]>([])
     const [faces, setFaces] = useState<Set<string>>(new Set([]))
     const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
+    
     const chars = useRef<IdentityBox[]>([])
     /** Detection box coords are in detection-canvas pixels (dw×dh), not full video pixels. */
     const lastDetectionDimsRef = useRef({ dw: 0, dh: 0 })
-
+    const idFramesRef = useRef<IdentityFrame[]>([])
+    
     useEffect(() => {
         detectionCanvasRef.current = document.createElement('canvas')
 
@@ -253,8 +255,8 @@ const names = useRef([
                         maxResults: 20,
                     }),
                 )
-                .then((detections) => {
-                    const fs: FaceBox[] = detections.map((d: FaceApiDetection) => ({
+                .then((detections: FaceDetection[]) => {
+                    const fs: FaceBox[] = detections.map((d: FaceDetection) => ({
                         x: d.box.x,
                         y: d.box.y,
                         w: d.box.width,
@@ -325,6 +327,7 @@ const names = useRef([
             ctx.setLineDash([]);
             
             let ns: IdentityBox[] = [...chars.current];
+            const charsInFrame: IdentityBox[] = []
             const currentNames: string[] = []
             let comparedTo: IdentityBox[] = [...chars.current];
             
@@ -338,17 +341,19 @@ const names = useRef([
                     );
 
                     if (chars.current.length === 0) { // no characters yet
-                        const n = names.current[ns.length % names.current.length] + Math.floor(Math.random() * 1000)
-                        ctx.fillText(n, rect.x * sx, rect.y * sy)
-                        ns.push({
-                            name: n,
+                        const name = names.current[ns.length % names.current.length] + Math.floor(Math.random() * 1000)
+                        ctx.fillText(name, rect.x * sx, rect.y * sy)
+                        const r = {
+                            name: name,
                             x: rect.x,
                             y: rect.y,
                             w: rect.w,
                             h: rect.h
-                        })
+                        }
+                        charsInFrame.push(r)
+                        ns.push(r)
 
-                        currentNames.push(n)
+                        currentNames.push(name)
                         
                     } else { // compare with existing characters
                         const found = comparedTo.find(({x, y}) => ((x - rect.x) ** 2 + (y - rect.y) ** 2) < THRESHOLD ** 2)
@@ -365,6 +370,15 @@ const names = useRef([
 
                                 return n
                             })
+
+                            charsInFrame.push({
+                                name: found.name,
+                                x: rect.x,
+                                y: rect.y,
+                                w: rect.w,
+                                h: rect.h
+                            })
+
                             currentNames.push(found.name)
                             comparedTo = comparedTo.filter(({x, y, name}) => x !== found.x && y !== found.y && name !== found.name);
                         } else {
@@ -377,12 +391,27 @@ const names = useRef([
                                 w: rect.w,
                                 h: rect.h
                             })
+
+                            charsInFrame.push({
+                                name: n,
+                                x: rect.x,
+                                y: rect.y,
+                                w: rect.w,
+                                h: rect.h
+                            })
+        
                             currentNames.push(n)
                         }
                     }
                 }
 
                 chars.current = ns
+
+                idFramesRef.current.push({
+                    boxes: charsInFrame,
+                    time: video.currentTime
+                })
+
                 const set = new Set(ns.map((n) => n.name))
                 const set2 = new Set(currentNames)
                 
@@ -424,7 +453,6 @@ const names = useRef([
                         // src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
                         src="/multiple.mp4"
                         onLoadedMetadata={(e) => {
-                            console.log('Loaded metadata', e.currentTarget.videoWidth, e.currentTarget.videoHeight);
                             setDuration(e.currentTarget.duration);
                             setVideoLength(e.currentTarget.duration);
                             setDimensions({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight });
