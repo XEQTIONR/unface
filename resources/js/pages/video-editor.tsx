@@ -7,7 +7,7 @@ import * as faceapi from '@vladmandic/face-api';
 import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { cn, fastHash, hashToRange } from '@/lib/utils';
+import { cn, hashToRange } from '@/lib/utils';
 import { create } from '@/routes/videos';
 
 const PX_PER_SECOND = 10;
@@ -26,15 +26,8 @@ const THRESHOLD = 12
 /** SSD MobileNet v1 weights (same family as face-api.js). */
 const FACE_API_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model'
 
-import type { FaceBox, FaceApiDetection } from '@/types/video'
+import type { FaceBox, FaceApiDetection, IdentityBox } from '@/types/video'
 
-
-
-interface NameX {
-    name: string
-    x: number
-    y: number
-}
 
 const removeNumberOne = (num: number) => {
     if (num === 1) {
@@ -96,7 +89,7 @@ const names = useRef([
     const latestFacesRef = useRef<FaceBox[]>([])
     const [faces, setFaces] = useState<Set<string>>(new Set([]))
     const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
-    const chars = useRef<NameX[]>([])
+    const chars = useRef<IdentityBox[]>([])
     /** Detection box coords are in detection-canvas pixels (dw×dh), not full video pixels. */
     const lastDetectionDimsRef = useRef({ dw: 0, dh: 0 })
 
@@ -291,7 +284,6 @@ const names = useRef([
         const ctx = canvasRef.current?.getContext('2d');
 
         function step() {
-            //console.log('step', chars)
             const video = videoRef.current;
             const canvas = canvasRef.current;
 
@@ -329,9 +321,9 @@ const names = useRef([
             ctx.lineWidth = Math.max(2, Math.round(cw / 400));
             ctx.setLineDash([]);
             
-            let ns: NameX[] = [...chars.current];
+            let ns: IdentityBox[] = [...chars.current];
             const currentNames: string[] = []
-            let comparedTo: NameX[] = [...chars.current];
+            let comparedTo: IdentityBox[] = [...chars.current];
             
             if (latestFacesRef.current.length > 0) {
                 for (const rect of latestFacesRef.current.sort((a, b) => a.x - b.x)) {
@@ -343,14 +335,14 @@ const names = useRef([
                     );
 
                     if (chars.current.length === 0) { // no characters yet
-
-                        
                         const n = names.current[ns.length % names.current.length] + Math.floor(Math.random() * 1000)
                         ctx.fillText(n, rect.x * sx, rect.y * sy)
                         ns.push({
                             name: n,
                             x: rect.x,
-                            y: rect.y
+                            y: rect.y,
+                            w: rect.w,
+                            h: rect.h
                         })
 
                         currentNames.push(n)
@@ -364,6 +356,8 @@ const names = useRef([
                                 if (n.name === found.name) {
                                     n.x = rect.x;
                                     n.y = rect.y;
+                                    n.w = rect.w;
+                                    n.h = rect.h;
                                 }
 
                                 return n
@@ -376,7 +370,9 @@ const names = useRef([
                             ns.push({
                                 name: n,
                                 x: rect.x,
-                                y: rect.y
+                                y: rect.y,
+                                w: rect.w,
+                                h: rect.h
                             })
                             currentNames.push(n)
                         }
@@ -422,8 +418,8 @@ const names = useRef([
                                 ? 'pointer-events-none absolute inset-0 z-0 opacity-0'
                                 : 'relative z-0',
                         )}
-                        src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
-                        // src="/multiple.mp4"
+                        // src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
+                        src="/multiple.mp4"
                         onLoadedMetadata={(e) => {
                             console.log('Loaded metadata', e.currentTarget.videoWidth, e.currentTarget.videoHeight);
                             setDuration(e.currentTarget.duration);
