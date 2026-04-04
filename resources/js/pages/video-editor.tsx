@@ -11,9 +11,6 @@ import { Button } from '@/components/ui/button'
 import {
     Popover,
     PopoverContent,
-    PopoverDescription,
-    PopoverHeader,
-    PopoverTitle,
     PopoverTrigger,
   } from "@/components/ui/popover"
 import { cn, hashToRange } from '@/lib/utils'
@@ -379,15 +376,9 @@ export default function VideoEditor() {
         };
     }, [faceApiReady, isPlaying, detect]);
 
-    useEffect(() => {
-        if (!isPlaying || !detect) {
-            return;
-        }
-    }, [isPlaying, detect])
-
     const onPlay = () => {
+
         setIsPlaying(true);
-        i.current = 0
         const ctx = canvasRef.current?.getContext('2d')
 
         function step() {
@@ -427,11 +418,12 @@ export default function VideoEditor() {
             ctx.font = '60px Arial';
             ctx.lineWidth = Math.max(2, Math.round(cw / 400));
             ctx.setLineDash([]);
+            const currentNames: string[] = []
 
             if (detect) {
                 let ns: IdentityBox[] = [...chars.current];
                 const charsInFrame: IdentityBox[] = []
-                const currentNames: string[] = []
+                
                 let comparedTo: IdentityBox[] = [...chars.current];
 
                 if (latestFacesRef.current.length > 0) {
@@ -529,29 +521,42 @@ export default function VideoEditor() {
                     setCurrentFaces(new Set([]))
                 }
             } else if (i.current < idFramesRef.current.length) { // render recorded frames
+
                 ctx.setLineDash([10, 30]);
                 const t = video.currentTime
 
                 if (Math.abs(t - idFramesRef.current[i.current].time) < 0.05) {
+
+                    const fr = []
+
                     for (const box of idFramesRef.current[i.current].boxes) {
                         ctx.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy)
                         ctx.fillText(box.name, box.x * sx, box.y * sy)
+                        console.log('setting current faces', box.name)
+                        fr.push(box.name)
                     }
+
+                    setCurrentFaces(new Set(fr))
 
                     i.current++
                 } else if (i.current > 0) {
+                    
                     const f = idFramesRef.current[i.current - 1]
 
                     if (Math.abs(t - f.time) < 0.05) {
+
+                        const fr = []
+
                         for (const box of idFramesRef.current[i.current - 1].boxes) {
                             ctx.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy)
                             ctx.fillText(box.name, box.x * sx, box.y * sy)
+                            fr.push(box.name)
                         }
+
+                        setCurrentFaces(new Set(fr))
                     }
                 }
             }
-
-            
 
             requestAnimationFrame(step)
         }
@@ -616,6 +621,8 @@ export default function VideoEditor() {
                                         ctx.fillText(box.name, box.x * sx, box.y * sy)
                                     }
                                 }
+
+                                i.current = 0
                             }}
                         />
                         <canvas
@@ -726,13 +733,13 @@ export default function VideoEditor() {
                 </div>
                 <div className="grid grid-cols-2 items-start gap-5 w-full p-4 md:p-16 mb-10">
                     <div className="bg-neutral-800/50 flex flex-col gap-2 py-6 px-6 rounded">
-                        <div className="w-full flex items-center justify-center">
+                        <div className="w-full flex items-center">
                             <div className="w-2/3 p-5">
                                 <h3 className=" font-extrabold uppercase">Face Tracking</h3>
                                 <span className="text-sm font-medium text-muted-foreground">Track faces live in the video</span>
                                 
                             </div>
-                            <div className="flex w-1/3 gap-3 justify-center">
+                            {/* <div className="flex w-1/3 gap-3 justify-center">
                                 <div className="rounded-lg bg-neutral-800 flex flex-col gap-2 items-center justify-center size-20 aspect-square">
                                     <Users size={20} />
                                     <span className="text-xs font-bold uppercase">Remove</span>
@@ -741,7 +748,7 @@ export default function VideoEditor() {
                                     <Users size={20} />
                                     <span className="text-xs font-bold uppercase">Sticker</span>
                                 </div>
-                            </div>
+                            </div> */}
                         </div>
                         <div className="flex flex-col gap-2 px-4 h-64 overflow-y-scroll">
                             {[...faces].map((name) => (
