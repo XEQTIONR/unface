@@ -619,7 +619,7 @@ export default function VideoEditor() {
                             )}
                             // src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
                             // src="/beach.mp4"
-                            src="https://cdn.coverr.co/videos/coverr-temp-examplemain-mp4-9501/1080p.mp4"
+                            // src="https://cdn.coverr.co/videos/coverr-temp-examplemain-mp4-9501/1080p.mp4"
                             onLoadedMetadata={(e) => {
                                 setDuration(e.currentTarget.duration);
                                 setVideoLength(e.currentTarget.duration);
@@ -719,17 +719,25 @@ export default function VideoEditor() {
 
                                         while (low <= high && !found) {
                                             mid = Math.floor((low + high) / 2)
- 
-                                            if (idFramesRef.current[mid].time === t) {
-                                                found = true
-                                            } else if (idFramesRef.current[mid].time < t) {
+                                            
+
+                                            if (idFramesRef.current[mid].time < t) {
+                                                //
                                                 low = mid + 1
-                                            } else {
+                                            } else if (idFramesRef.current[mid].time > t) {
+                                                //
                                                 high = mid - 1
+                                            } else {
+                                                found = true
                                             }
                                         }
 
-                                        i.current = high                                    
+                                        if (found) {
+                                            i.current = mid;
+                                        } else {
+                                            i.current = low;
+                                        }
+                                    
                                     }
                                 }}
                                 onPointerCancel={(e) => {
