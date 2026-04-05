@@ -8,11 +8,14 @@ import type { FaceDetection } from '@vladmandic/face-api'
 import { Pause, Play, Trash, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import {
     Popover,
     PopoverContent,
     PopoverTrigger,
-  } from "@/components/ui/popover"
+} from "@/components/ui/popover"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn, hashToRange } from '@/lib/utils'
 import { create } from '@/routes/videos'
 
@@ -33,9 +36,7 @@ const THRESHOLD = 12
 const FACE_API_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model'
 
 import type { FaceBox, IdentityBox, IdentityFrame } from '@/types/video'
-import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+
 
 
 const removeNumberOne = (num: number) => {
@@ -188,6 +189,8 @@ export default function VideoEditor() {
     const i = useRef(0)
     
     
+
+
     useEffect(() => {
         detectionCanvasRef.current = document.createElement('canvas')
 
@@ -195,6 +198,37 @@ export default function VideoEditor() {
             detectionCanvasRef.current = null
         };
     }, []);
+
+    const paintVideoToDisplayCanvas = useCallback(() => {
+        const video = videoRef.current
+        const canvas = canvasRef.current
+
+        if (!video || !canvas) {
+            return
+        }
+
+        const ctx = canvas.getContext('2d')
+
+        if (!ctx) {
+            return
+        }
+
+        const vw = video.videoWidth
+        const vh = video.videoHeight
+
+        if (!vw || !vh) {
+            return
+        }
+
+        const cw = canvas.width
+        const ch = canvas.height
+
+        if (!cw || !ch) {
+            return
+        }
+
+        ctx.drawImage(video, 0, 0, cw, ch)
+    }, [])
 
     const setTimeFromClientX = useCallback((clientX: number) => {
         const timeline = timelineRef.current
@@ -217,8 +251,10 @@ export default function VideoEditor() {
             maxTime != null && maxTime > 0 ? Math.max(0, Math.min(raw, maxTime)) : Math.max(0, raw);
 
         video.currentTime = t;
-        setCurrentTime(t);
+        
+        setCurrentTime(t) // really important
     }, [duration]);
+    
 
     const formatTime = (time: number) => {
         const hours = Math.floor(time / 3600);
@@ -571,6 +607,7 @@ export default function VideoEditor() {
                 <div className="flex w-full flex-col gap-5 overflow-x-auto rounded-xl px-4 md:px-16">
                     <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-neutral-300">
                         <video
+                            id="video"
                             ref={videoRef}
                             crossOrigin="anonymous"
                             playsInline
@@ -582,7 +619,8 @@ export default function VideoEditor() {
                                     : 'relative z-0',
                             )}
                             // src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
-                            src="/multiple.mp4"
+                            // src="/beach.mp4"
+                            src="https://cdn.coverr.co/videos/coverr-temp-examplemain-mp4-9501/1080p.mp4"
                             onLoadedMetadata={(e) => {
                                 setDuration(e.currentTarget.duration);
                                 setVideoLength(e.currentTarget.duration);
@@ -591,6 +629,9 @@ export default function VideoEditor() {
                             }}
                             onPlay={() => onPlay()}
                             onPause={() => setIsPlaying(false)}
+                            onSeeked={() => {
+                                requestAnimationFrame(() => paintVideoToDisplayCanvas())
+                            }}
                             onTimeUpdate={(e) => {
                                 if (isScrubbingRef.current) {
                                     return;
