@@ -568,7 +568,6 @@ export default function VideoEditor() {
                     for (const box of idFramesRef.current[i.current].boxes) {
                         ctx.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy)
                         ctx.fillText(box.name, box.x * sx, box.y * sy)
-                        console.log('setting current faces', box.name)
                         fr.push(box.name)
                     }
 
@@ -710,6 +709,28 @@ export default function VideoEditor() {
                                     e.currentTarget.releasePointerCapture(e.pointerId);
                                     isScrubbingRef.current = false;
                                     setIsScrubbing(false);
+
+                                    if (!detect) {
+                                        const t = videoRef.current?.currentTime || 0
+                                        let low = 0
+                                        let high = idFramesRef.current.length - 1
+                                        let mid = Math.floor((low + high) / 2)
+                                        let found = false
+
+                                        while (low <= high && !found) {
+                                            mid = Math.floor((low + high) / 2)
+ 
+                                            if (idFramesRef.current[mid].time === t) {
+                                                found = true
+                                            } else if (idFramesRef.current[mid].time < t) {
+                                                low = mid + 1
+                                            } else {
+                                                high = mid - 1
+                                            }
+                                        }
+
+                                        i.current = high                                    
+                                    }
                                 }}
                                 onPointerCancel={(e) => {
                                     e.currentTarget.releasePointerCapture(e.pointerId);
