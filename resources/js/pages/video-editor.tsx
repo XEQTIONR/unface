@@ -1,3 +1,4 @@
+
 import { Head } from '@inertiajs/react'
 import '@tensorflow/tfjs-backend-cpu'
 import '@tensorflow/tfjs-backend-webgl'
@@ -5,299 +6,97 @@ import * as tf from '@tensorflow/tfjs'
 /** Maintained face-api.js–compatible API for TensorFlow.js 4.x (original `face-api.js` npm targets old TFJS). */
 import * as faceapi from '@vladmandic/face-api'
 import type { FaceDetection } from '@vladmandic/face-api'
-import { Pause, Play, Trash, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react'
+import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react'
 import { useCallback, useRef, useState, useEffect } from 'react'
+import type { SyntheticEvent } from 'react'
 import { Button } from '@/components/ui/button'
-import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from "@/components/ui/popover"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { cn, hashToRange } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { create } from '@/routes/videos'
-
-const PX_PER_SECOND = 10;
-
-/** How often to run face detection (ms). Lower = fresher boxes; slightly higher can help stability on slow GPUs. */
-const DETECTION_INTERVAL_MS = 50;
-
-/**
- * Longest side (px) fed into the detector when the video is larger than this.
- * Smaller sources use **native** resolution (no upscale).
- */
-const MAX_DETECTION_LONG_SIDE = 720
-
-const THRESHOLD = 12
-
-/** SSD MobileNet v1 weights (same family as face-api.js). */
-const FACE_API_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model'
-
 import type { FaceBox, IdentityBox, IdentityFrame } from '@/types/video'
+import type { Clip } from '@/types/video'
+import { 
+    DETECTION_INTERVAL_MS, 
+    FACE_API_MODEL_BASE, 
+    PX_PER_SECOND, 
+    MAX_DETECTION_LONG_SIDE, 
+    MOVEMENT_THRESHOLD, 
+    names as allNames, 
+} from './video-editor/constants'
+import FaceRow from './video-editor/face-row'
+import VideoClip from './video-editor/video-clip'
 
 
-
-const removeNumberOne = (num: number) => {
-    if (num === 1) {
-        return ''
-    }
-    
-    return '_' + num.toString()
-}
-
-function FaceRow({ 
-    name, 
-    allFaces, 
-    currentFaces,
-    onSubmit,
-}: { 
-    name: string, 
-    allFaces: Set<string>, 
-    currentFaces: Set<string>,
-    onSubmit?: (name: string, oldName: string) => void,
-}) {
-    
-    const [nameVal, setNameVal] = useState(name)
-
-    return (
-        <Popover>
-            <PopoverTrigger asChild>
-                <div key={name} className="flex items-center justify-between py-2 pl-2 pr-2.5 rounded cursor-pointer hover:bg-neutral-700/50">
-                    <div className="flex gap-5 items-center">
-                        <span className={cn(
-                            "material-symbols-outlined px-2.5 py-2 rounded flex items-center justify-center text-4xl!",
-                            currentFaces.has(name) ? 'bg-teal-600' : "bg-neutral-600"
-                        )}>
-                            face{removeNumberOne(hashToRange(name, 6))}
-                        </span>
-                        <span className="text-sm font-medium text-muted-foreground">{name}</span>
-                    </div>
-                    <div className="flex gap-2 items-center">
-                        <Button className="cursor-pointer" variant="destructive" size="icon">
-                            <Trash />
-                        </Button>
-                    </div>
-                </div>
-            </PopoverTrigger>
-            <PopoverContent  side="top" className="w-sm">
-                <form onSubmit={(e) => {
-                    e.preventDefault()
-                    const formData = new FormData(e.target as HTMLFormElement)
-
-                    if (onSubmit) {
-                        onSubmit(nameVal, name)
-                    }
-                }}>
-                    <FieldSet>
-                        <FieldLegend>{name}</FieldLegend>
-                        <FieldDescription>Edit the name and assign the character to the name.</FieldDescription>
-                        <FieldGroup>
-                            <Field>
-                                <FieldLabel>Name</FieldLabel>
-                                <Input name="name" value={nameVal} onChange={(e) => setNameVal(e.target.value)} placeholder="Name" />
-                            </Field>
-                            <Field>
-                                <FieldLabel>Assign Character</FieldLabel>
-                                <Select name="character" defaultValue={name} onValueChange={(value) => setNameVal(value)}>
-                                    <SelectTrigger className='grow'>
-                                        <SelectValue placeholder="Select a character" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {
-                                            [...allFaces].map((character) => (
-                                                <SelectItem key={character} value={character}>{character}</SelectItem>
-                                            ))
-                                        }
-                                    </SelectContent>
-                                </Select>
-                            </Field>
-                            <Field className='justify-end mt-2' orientation="horizontal">
-                                <Button type="submit" size="sm" variant="default">Submit</Button>
-                                <Button size="sm" variant="outline">Cancel</Button>
-                            </Field>
-                        </FieldGroup>
-                    </FieldSet>
-                </form>
-            </PopoverContent>
-      </Popover>
-
-
-
-        
-    )
-}
 
 export default function VideoEditor() {
-
-
-    const names = useRef([
-        'Abagail',
-        'Bailey',
-        'Cameron',
-        'Dakota',
-        'Ethan',
-        'Finn',
-        'Grace',
-        'Henry',
-        'Isabella',
-        'Jacob',
-        'Kiara',
-        'Liam',
-        'Mary',
-        'Natalie',
-        'Oliver',
-        'Paisley',
-        'Quinn',
-        'Ryan',
-        'Samuel',
-        'Trent',
-        'Uma',
-        'Victoria',
-        'William',
-        'Xavier',
-        'Yasmine',
-        'Zachary',
-    ])
-
-    const videoRef = useRef<HTMLVideoElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
-    const timelineRef = useRef<HTMLDivElement>(null)
-    const isScrubbingRef = useRef(false)
-
-    const [detect, setDetect] = useState(true)
-    const [currentTime, setCurrentTime] = useState(0)
-    const [duration, setDuration] = useState(0)
-    const [videoLength, setVideoLength] = useState(0)
-    const [isScrubbing, setIsScrubbing] = useState(false)
-    const [isPlaying, setIsPlaying] = useState(false)
-    const [zoomLevel, setZoomLevel] = useState(1)
-    const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
-    const [metaLoaded, setMetaLoaded] = useState(false)
-
-    const [faceApiReady, setFaceApiReady] = useState(false)
-    const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
-    const latestFacesRef = useRef<FaceBox[]>([])
-    const [faces, setFaces] = useState<Set<string>>(new Set([]))
-    const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
-    
     const chars = useRef<IdentityBox[]>([])
     /** Detection box coords are in detection-canvas pixels (dw×dh), not full video pixels. */
-    const lastDetectionDimsRef = useRef({ dw: 0, dh: 0 })
-    const idFramesRef = useRef<IdentityFrame[]>([])
+    const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const i = useRef(0)
-    
-    
+    const idFramesRef = useRef<IdentityFrame[]>([])
+    const isScrubbingRef = useRef(false)
+    const lastDetectionDimsRef = useRef({ dw: 0, dh: 0 })
+    const latestFacesRef = useRef<FaceBox[]>([])
+    const names = useRef(allNames)
+    const timelineRef = useRef<HTMLDivElement>(null)
+    const videoRef = useRef<HTMLVideoElement>(null)
 
-
+    const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
+    const [currentTime, setCurrentTime] = useState(0)
+    const [detect, setDetect] = useState(true)
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
+    const [duration, setDuration] = useState(0)
+    const [faceApiReady, setFaceApiReady] = useState(false)
+    const [faces, setFaces] = useState<Set<string>>(new Set([]))
+    const [isPlaying, setIsPlaying] = useState(false)
+    const [isScrubbing, setIsScrubbing] = useState(false)
+    const [metaLoaded, setMetaLoaded] = useState(false)
+    const [videoLength, setVideoLength] = useState(0)
+    const [zoomLevel, setZoomLevel] = useState(1)
+    const [clips, setClips] = useState<Clip[]>([])
+    const [currentClip, setCurrentClip] = useState<Clip | null>(null)
+    
     useEffect(() => {
         detectionCanvasRef.current = document.createElement('canvas')
 
         return () => {
             detectionCanvasRef.current = null
-        };
-    }, []);
-
-    const paintVideoToDisplayCanvas = useCallback(() => {
-        const video = videoRef.current
-        const canvas = canvasRef.current
-
-        if (!video || !canvas) {
-            return
         }
-
-        const ctx = canvas.getContext('2d')
-
-        if (!ctx) {
-            return
-        }
-
-        const vw = video.videoWidth
-        const vh = video.videoHeight
-
-        if (!vw || !vh) {
-            return
-        }
-
-        const cw = canvas.width
-        const ch = canvas.height
-
-        if (!cw || !ch) {
-            return
-        }
-
-        ctx.drawImage(video, 0, 0, cw, ch)
     }, [])
-
-    const setTimeFromClientX = useCallback((clientX: number) => {
-        const timeline = timelineRef.current
-        const video = videoRef.current
-
-        if (!timeline || !video) {
-            return
-        }
-
-        const rect = timeline.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const raw = x / PX_PER_SECOND;
-        const maxTime =
-            Number.isFinite(video.duration) && video.duration > 0
-                ? video.duration
-                : duration > 0
-                  ? duration
-                  : undefined;
-        const t =
-            maxTime != null && maxTime > 0 ? Math.max(0, Math.min(raw, maxTime)) : Math.max(0, raw);
-
-        video.currentTime = t;
-        
-        setCurrentTime(t) // really important
-    }, [duration]);
-    
-
-    const formatTime = (time: number) => {
-        const hours = Math.floor(time / 3600);
-        const minutes = Math.floor((time % 3600) / 60);
-        const seconds = time % 60;
-
-        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toFixed(0).toString().padStart(2, '0')}`;
-    };
 
     useEffect(() => {
 
-        const v = videoRef.current;
+        const v = videoRef.current
+        let cancelled = false
 
         if (v) {
-            v.crossOrigin = 'anonymous';
-            v.load();
+            v.crossOrigin = 'anonymous'
+            v.load()
         }
         
-        let cancelled = false;
-
         (async () => {
             try {
                 // Prefer WebGL for faster inference; fall back to CPU if WebGL fails (e.g. tainted source).
                 const ok =
-                    (await tf.setBackend('webgl')) || (await tf.setBackend('cpu'));
+                    (await tf.setBackend('webgl')) || (await tf.setBackend('cpu'))
 
                 if (!ok || cancelled) {
-                    return;
+                    return
                 }
 
-                await tf.ready();
+                await tf.ready()
 
                 if (cancelled) {
-                    return;
+                    return
                 }
 
-                await faceapi.nets.ssdMobilenetv1.loadFromUri(FACE_API_MODEL_BASE);
+                await faceapi.nets.ssdMobilenetv1.loadFromUri(FACE_API_MODEL_BASE)
 
                 if (!cancelled) {
-                    setFaceApiReady(true);
+                    setFaceApiReady(true)
                 }
             } catch (error) {
-                console.error(error);
+                console.error(error)
             }
         })();
 
@@ -305,7 +104,6 @@ export default function VideoEditor() {
             cancelled = true;
         };
     }, []);
-
 
     useEffect(() => {
         if (!faceApiReady || !isPlaying || !detect) {
@@ -333,18 +131,18 @@ export default function VideoEditor() {
             const canvas = detectionCanvasRef.current;
 
             if (!video || !canvas || video.paused || video.ended) {
-                return;
+                return
             }
 
             if (time - lastDetectionAt < DETECTION_INTERVAL_MS) {
-                return;
+                return
             }
 
             const vw = video.videoWidth;
             const vh = video.videoHeight;
 
             if (!vw || !vh) {
-                return;
+                return
             }
 
             const long = Math.max(vw, vh);
@@ -410,11 +208,90 @@ export default function VideoEditor() {
             cancelled = true;
             cancelAnimationFrame(rafId);
         };
-    }, [faceApiReady, isPlaying, detect]);
+    }, [faceApiReady, isPlaying, detect])
+
+    const formatTime = (time: number) => {
+        const hours = Math.floor(time / 3600)
+        const minutes = Math.floor((time % 3600) / 60)
+        const seconds = time % 60
+
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toFixed(0).toString().padStart(2, '0')}`
+    }
+    
+    const paintVideoToDisplayCanvas = useCallback(() => {
+        const video = videoRef.current
+        const canvas = canvasRef.current
+
+        if (!video || !canvas) {
+            return
+        }
+
+        const ctx = canvas.getContext('2d')
+
+        if (!ctx) {
+            return
+        }
+
+        const vw = video.videoWidth
+        const vh = video.videoHeight
+
+        if (!vw || !vh) {
+            return
+        }
+
+        const cw = canvas.width
+        const ch = canvas.height
+
+        if (!cw || !ch) {
+            return
+        }
+
+        ctx.drawImage(video, 0, 0, cw, ch)
+    }, [])
+
+    const setTimeFromClientX = useCallback((clientX: number) => {
+        const timeline = timelineRef.current
+        const video = videoRef.current
+
+        if (!timeline || !video) {
+            return
+        }
+
+        const rect = timeline.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const raw = x / PX_PER_SECOND;
+        const maxTime =
+            Number.isFinite(video.duration) && video.duration > 0
+                ? video.duration
+                : duration > 0
+                  ? duration
+                  : undefined
+        const t =
+            maxTime != null && maxTime > 0 ? Math.max(0, Math.min(raw, maxTime)) : Math.max(0, raw)
+
+        video.currentTime = t
+        
+        setCurrentTime(t) // really important
+    }, [duration])
+
+    const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>)  => {
+        setDuration(e.currentTarget.duration)
+        setVideoLength(e.currentTarget.duration)
+        setDimensions({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })
+        setMetaLoaded(true)
+    }
 
     const onPlay = () => {
 
-        setIsPlaying(true);
+        if (detect) {
+            setCurrentClip({
+                name: 'Clip ' + (clips.length + 1),
+                start: videoRef.current?.currentTime || 0,
+                status: 'initializing'
+            })
+        }
+
+        setIsPlaying(true)
         const ctx = canvasRef.current?.getContext('2d')
 
         function step() {
@@ -487,7 +364,7 @@ export default function VideoEditor() {
                             currentNames.push(name)
                             
                         } else { // compare with existing characters
-                            const found = comparedTo.find(({x, y}) => ((x - rect.x) ** 2 + (y - rect.y) ** 2) < THRESHOLD ** 2)
+                            const found = comparedTo.find(({x, y}) => ((x - rect.x) ** 2 + (y - rect.y) ** 2) < MOVEMENT_THRESHOLD ** 2)
     
                             if (found) {
                                 ctx.fillText(found.name, rect.x * sx, rect.y * sy)
@@ -599,6 +476,63 @@ export default function VideoEditor() {
         requestAnimationFrame(step)
     }
 
+    const onPause = () => {
+
+        if (detect) {
+            if (currentClip) {
+                const clip: Clip = {
+                    name: currentClip.name,
+                    start: currentClip.start,
+                    end: videoRef.current?.currentTime || 0,
+                    status: 'processing'
+                }
+
+                setClips([...clips, clip])
+            }
+        }
+
+        setIsPlaying(false)
+    }
+
+    const onSeeked = () => {
+        requestAnimationFrame(() => paintVideoToDisplayCanvas())
+    }
+
+    const onTimeUpdate = (e: SyntheticEvent<HTMLVideoElement>) => {
+        if (isScrubbingRef.current) {
+            return
+        }
+
+        setCurrentTime(e.currentTarget.currentTime)
+    }
+
+    const onEnded = () => {
+        setDetect(false)
+        latestFacesRef.current = []
+
+        const video = videoRef.current
+        const vw = video?.videoWidth || 0
+        const vh = video?.videoHeight || 0
+        const ctx = canvasRef.current?.getContext('2d')
+        const canvas = canvasRef.current
+        const cw = canvas?.width || 0
+        const ch = canvas?.height || 0
+
+        
+        const { dw, dh } = lastDetectionDimsRef.current
+        const sx = dw > 0 ? cw / dw : cw / vw
+        const sy = dh > 0 ? ch / dh : ch / vh
+
+        for (const box of idFramesRef.current[idFramesRef.current.length - 1].boxes) {
+            if (ctx) {
+                ctx.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy)
+                ctx.fillText(box.name, box.x * sx, box.y * sy)
+            }
+        }
+
+        i.current = 0
+    }
+
     return (
         <>
             <Head title="Video Editor" />
@@ -617,53 +551,15 @@ export default function VideoEditor() {
                                     ? 'pointer-events-none absolute inset-0 z-0 opacity-0'
                                     : 'relative z-0',
                             )}
-                            // src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
-                            // src="/beach.mp4"
-                            // src="https://cdn.coverr.co/videos/coverr-temp-examplemain-mp4-9501/1080p.mp4"
-                            onLoadedMetadata={(e) => {
-                                setDuration(e.currentTarget.duration);
-                                setVideoLength(e.currentTarget.duration);
-                                setDimensions({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight });
-                                setMetaLoaded(true);
-                            }}
-                            onPlay={() => onPlay()}
-                            onPause={() => setIsPlaying(false)}
-                            onSeeked={() => {
-                                requestAnimationFrame(() => paintVideoToDisplayCanvas())
-                            }}
-                            onTimeUpdate={(e) => {
-                                if (isScrubbingRef.current) {
-                                    return;
-                                }
-
-                                setCurrentTime(e.currentTarget.currentTime);
-                            }}
-                            onEnded={() => {
-                                setDetect(false)
-                                latestFacesRef.current = []
-
-                                const video = videoRef.current;
-                                const vw = video?.videoWidth || 0;
-                                const vh = video?.videoHeight || 0;
-                                const ctx = canvasRef.current?.getContext('2d');
-                                const canvas = canvasRef.current;
-                                const cw = canvas?.width || 0;
-                                const ch = canvas?.height || 0;
-
-                                
-                                const { dw, dh } = lastDetectionDimsRef.current;
-                                const sx = dw > 0 ? cw / dw : cw / vw;
-                                const sy = dh > 0 ? ch / dh : ch / vh;
-
-                                for (const box of idFramesRef.current[idFramesRef.current.length - 1].boxes) {
-                                    if (ctx) {
-                                        ctx.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy)
-                                        ctx.fillText(box.name, box.x * sx, box.y * sy)
-                                    }
-                                }
-
-                                i.current = 0
-                            }}
+                            //src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
+                            // src="/EShort.mp4"
+                             src="https://cdn.coverr.co/videos/coverr-temp-examplemain-mp4-9501/1080p.mp4"
+                            onLoadedMetadata={onLoadedMetadata}
+                            onPlay={onPlay}
+                            onPause={onPause}
+                            onSeeked={onSeeked}
+                            onTimeUpdate={onTimeUpdate}
+                            onEnded={onEnded}
                         />
                         <canvas
                             className={cn(
@@ -746,12 +642,12 @@ export default function VideoEditor() {
                                     setIsScrubbing(false);
                                 }}
                             >
-                                <div className="relative h-36 w-full overflow-visible pb-5">
+                                <div className="relative min-h-44 h-full w-full overflow-visible pb-5">
                                     <div
                                         id="seeker-line"
                                         className={cn(
                                             'pointer-events-none absolute -top-3 bottom-0 z-1 -mr-px w-px overflow-visible bg-neutral-300',
-                                            (isScrubbing ? '' : 'transition-all duration-250 ease-linear'))
+                                            (isScrubbing ? '' : 'transition-all duration-200 ease-linear'))
                                         }
                                         style={{left: `${currentTime * PX_PER_SECOND * zoomLevel}px`}}
                                     >
@@ -762,7 +658,7 @@ export default function VideoEditor() {
                                     </div>
                                     <div className="relative flex h-full w-full flex-col gap-1.5 bg-neutral-900 pb-5">
                                         <div
-                                            className="h-5 w-full transition-all duration-250 ease-linear"
+                                            className="h-5 w-full transition-all duration-250 ease-linear bg-repeat-x"
                                             style={{
                                                 backgroundColor: 'transparent',
                                                 backgroundImage: `
@@ -770,17 +666,28 @@ export default function VideoEditor() {
                                                     linear-gradient(90deg, #666 1px, transparent 1px)
                                                 `,
                                                 backgroundSize: `${zoomLevel * 50}px 13px, ${zoomLevel * 10}px 5px`,
-                                                backgroundRepeat: 'repeat-x',
                                                 backgroundPosition: '0 top',
                                             }}
                                         />
 
-                                        <div className="flex h-3/5 mt-3 w-full items-stretch gap-1">
+                                        <div className="flex h-full mt-3 w-full items-stretch gap-1">
                                             <div 
-                                                className="flex items-center rounded border-x border-neutral-300 bg-neutral-700/65 px-3 text-xs font-bold uppercase transition-discrete duration-250 ease-linear"
+                                                className="flex items-start gap-0.25 rounded  bg-neutral-700/65 transition-discrete duration-250 ease-linear"
                                                 style={{ width: `${videoLength * PX_PER_SECOND * zoomLevel}px` }}
                                             >
-                                                Clip_01
+                                               {
+                                                    clips.map((clip) => <VideoClip framesRef={idFramesRef} key={clip.name} clip={clip} zoomLevel={zoomLevel} />)
+                                                    
+                                                }
+                                                {
+                                                    isPlaying &&  (
+                                                        <div 
+                                                            className="h-full bg-red-500 relative"
+                                                            style={{ width: `${((currentTime - (currentClip?.start || 0)) * PX_PER_SECOND * zoomLevel) - (PX_PER_SECOND/5)}px` }}
+                                                        />
+                                                    )
+                                                }
+                                                
                                             </div>
                                         </div>
                                     </div>
