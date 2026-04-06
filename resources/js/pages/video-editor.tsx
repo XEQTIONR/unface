@@ -9,6 +9,7 @@ import type { FaceDetection } from '@vladmandic/face-api'
 import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
+import Dropzone from '@/components/dropzone'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { create } from '@/routes/videos'
@@ -24,8 +25,6 @@ import {
 } from './video-editor/constants'
 import FaceRow from './video-editor/face-row'
 import VideoClip from './video-editor/video-clip'
-
-
 
 export default function VideoEditor() {
     const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -55,6 +54,29 @@ export default function VideoEditor() {
     const [zoomLevel, setZoomLevel] = useState(1)
     const [clips, setClips] = useState<Clip[]>([])
     const [currentClip, setCurrentClip] = useState<Clip | null>(null)
+    const [videoFileUrl, setVideoFileUrl] = useState<string | undefined>(undefined)
+    const videoBlobUrlRef = useRef<string | undefined>(undefined)
+
+    const handleVideoFileSelect = useCallback((file: File) => {
+        if (videoBlobUrlRef.current) {
+            URL.revokeObjectURL(videoBlobUrlRef.current)
+        }
+
+        const url = URL.createObjectURL(file)
+        videoBlobUrlRef.current = url
+        setVideoFileUrl(url)
+    }, [])
+
+    useEffect(() => {
+        return () => {
+            if (videoBlobUrlRef.current) {
+                URL.revokeObjectURL(videoBlobUrlRef.current)
+            }
+        }
+    }, [])
+    //src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
+    // src="/EShort.mp4"
+    // src="https://cdn.coverr.co/videos/coverr-temp-examplemain-mp4-9501/1080p.mp4"
     
     useEffect(() => {
         detectionCanvasRef.current = document.createElement('canvas')
@@ -537,48 +559,50 @@ export default function VideoEditor() {
         <>
             <Head title="Video Editor" />
             <div className="flex flex-col">
-                <div className="flex w-full flex-col gap-5 overflow-x-auto rounded-xl px-4 md:px-16">
-                    <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-neutral-300">
-                        <video
-                            id="video"
-                            ref={videoRef}
-                            crossOrigin="anonymous"
-                            playsInline
-                            preload="auto"
-                            className={cn(
-                                'h-full w-full object-cover',
-                                metaLoaded
-                                    ? 'pointer-events-none absolute inset-0 z-0 opacity-0'
-                                    : 'relative z-0',
-                            )}
-                            //src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
-                            // src="/EShort.mp4"
-                             src="https://cdn.coverr.co/videos/coverr-temp-examplemain-mp4-9501/1080p.mp4"
-                            onLoadedMetadata={onLoadedMetadata}
-                            onPlay={onPlay}
-                            onPause={onPause}
-                            onSeeked={onSeeked}
-                            onTimeUpdate={onTimeUpdate}
-                            onEnded={onEnded}
-                        />
-                        <canvas
-                            className={cn(
-                                'h-full w-full object-contain',
-                                metaLoaded ? 'relative z-10 block' : 'hidden',
-                            )}
-                            ref={canvasRef}
-                            width={dimensions.width}
-                            height={dimensions.height}
-                        />
-                    </div>
+                <div className="flex w-full flex-col gap-5 overflow-x-auto rounded-xl py-4 md:px-16">
+                {
+                    videoFileUrl ? 
+                    (    <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-neutral-300">
+                            <video
+                                id="video"
+                                ref={videoRef}
+                                crossOrigin="anonymous"
+                                playsInline
+                                preload="auto"
+                                className={cn(
+                                    'h-full w-full object-cover',
+                                    metaLoaded
+                                        ? 'pointer-events-none absolute inset-0 z-0 opacity-0'
+                                        : 'relative z-0',
+                                )}
+                                src={videoFileUrl}
+                                onLoadedMetadata={onLoadedMetadata}
+                                onPlay={onPlay}
+                                onPause={onPause}
+                                onSeeked={onSeeked}
+                                onTimeUpdate={onTimeUpdate}
+                                onEnded={onEnded}
+                            />
+                            <canvas
+                                className={cn(
+                                    'h-full w-full object-contain',
+                                    metaLoaded ? 'relative z-10 block' : 'hidden',
+                                )}
+                                ref={canvasRef}
+                                width={dimensions.width}
+                                height={dimensions.height}
+                            />
+                        </div>
+                    ): <Dropzone className="w-full aspect-video" onSelect={handleVideoFileSelect} />
+                }
                     <div className="w-full flex flex-col gap-5 pt-5">
                         <div className="flex justify-between">
                             <h1 className="font-extrabold tracking-widest uppercase">Global Timeline</h1>
                             <div className="flex items-center gap-2">
-                                <Button onClick={() => setZoomLevel(zoomLevel + 0.1)} variant="ghost" size="icon">
+                                <Button onClick={() => setZoomLevel(zoomLevel + 0.5)} variant="ghost" size="icon">
                                     <ZoomIn />
                                 </Button>
-                                <Button onClick={() => setZoomLevel(Math.max(1, zoomLevel - 0.1))} variant="ghost" size="icon">
+                                <Button onClick={() => setZoomLevel(Math.max(1, zoomLevel - 0.5))} variant="ghost" size="icon">
                                     <ZoomOut />
                                 </Button>
                             </div>
@@ -656,7 +680,7 @@ export default function VideoEditor() {
                                             className="relative -left-[7px] -top-1 rotate-180 fill-white stroke-0 text-neutral-300"
                                         />
                                     </div>
-                                    <div className="relative flex h-full w-full flex-col gap-1.5 bg-neutral-900 pb-5">
+                                    <div className="relative flex h-full w-full flex-col gap-1.5 bg-neutral-50 dark:bg-neutral-900 pb-5">
                                         <div
                                             className="h-5 w-full transition-all duration-250 ease-linear bg-repeat-x"
                                             style={{
@@ -695,9 +719,16 @@ export default function VideoEditor() {
                             </div>
                             <div className="relative z-10 flex items-center gap-2">
                                 <Button
-                                    onClick={() =>
-                                        isPlaying ? videoRef.current?.pause() : videoRef.current?.play()
-                                    }
+                                    disabled={!videoFileUrl}
+                                    onClick={() => {
+                                        if (videoFileUrl) {
+                                            if (isPlaying) {
+                                                videoRef.current?.pause()
+                                            } else {
+                                                videoRef.current?.play()
+                                            }
+                                        } 
+                                    }}
                                     variant="secondary"
                                     size="icon"
                                 >

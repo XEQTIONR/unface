@@ -88,7 +88,7 @@ export default function VideoClip({
                                             left: `${(start - clip.start) * PX_PER_SECOND * zoomLevel}px`
                                         }}
                                     >
-                                        
+                                        {name}
                                     </div>
                                 ))}
                             </div>
