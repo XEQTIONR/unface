@@ -11,6 +11,11 @@ import { useCallback, useRef, useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
 import Dropzone from '@/components/dropzone'
 import { Button } from '@/components/ui/button'
+import {
+    ResizableHandle,
+    ResizablePanel,
+    ResizablePanelGroup,
+  } from "@/components/ui/resizable"
 import { cn } from '@/lib/utils'
 import { create } from '@/routes/videos'
 import type { FaceBox, IdentityBox, IdentityFrame } from '@/types/video'
@@ -39,6 +44,8 @@ export default function VideoEditor() {
     const names = useRef(allNames)
     const timelineRef = useRef<HTMLDivElement>(null)
     const videoRef = useRef<HTMLVideoElement>(null)
+    const videoBlobUrlRef = useRef<string | undefined>(undefined)
+    const videoContainerRef = useRef<HTMLDivElement>(null)
 
     const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
     const [currentTime, setCurrentTime] = useState(0)
@@ -55,7 +62,7 @@ export default function VideoEditor() {
     const [clips, setClips] = useState<Clip[]>([])
     const [currentClip, setCurrentClip] = useState<Clip | null>(null)
     const [videoFileUrl, setVideoFileUrl] = useState<string | undefined>(undefined)
-    const videoBlobUrlRef = useRef<string | undefined>(undefined)
+    
 
     const handleVideoFileSelect = useCallback((file: File) => {
         if (videoBlobUrlRef.current) {
@@ -301,6 +308,32 @@ export default function VideoEditor() {
         setVideoLength(e.currentTarget.duration)
         setDimensions({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })
         setMetaLoaded(true)
+    }
+
+    const canPlay = () => {
+        const canvas = canvasRef.current
+        const video = videoRef.current
+
+        if (! canvas || ! video) {
+            return
+        }
+
+        const ctx = canvas.getContext('2d')
+        
+        if (! ctx) {
+            return
+        }
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+        if (videoContainerRef.current) {
+            videoContainerRef.current.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+                inline: 'center'
+            })
+        }
+        
     }
 
     const onPlay = () => {
@@ -558,11 +591,11 @@ export default function VideoEditor() {
     return (
         <>
             <Head title="Video Editor" />
-            <div className="flex flex-col">
-                <div className="flex w-full flex-col gap-5 overflow-x-auto rounded-xl py-4 md:px-16">
-                {
+                <ResizablePanelGroup orientation="vertical">
+                    <ResizablePanel className="overflow-scroll w-full" defaultSize="80%">
+                    {
                     videoFileUrl ? 
-                    (    <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-neutral-300">
+                    (    <div id="video-container" ref={videoContainerRef} className="aspect-video size-[10000px] bg-purple-950 overflow-hidden">
                             <video
                                 id="video"
                                 ref={videoRef}
@@ -577,6 +610,7 @@ export default function VideoEditor() {
                                 )}
                                 src={videoFileUrl}
                                 onLoadedMetadata={onLoadedMetadata}
+                                onCanPlay={canPlay}
                                 onPlay={onPlay}
                                 onPause={onPause}
                                 onSeeked={onSeeked}
@@ -584,10 +618,12 @@ export default function VideoEditor() {
                                 onEnded={onEnded}
                             />
                             <canvas
-                                className={cn(
-                                    'h-full w-full object-contain',
-                                    metaLoaded ? 'relative z-10 block' : 'hidden',
-                                )}
+                                className={cn(!metaLoaded && 'hidden')}
+                                style={{
+                                    marginLeft: '50%',
+                                    marginTop: '50%',
+                                    transform: 'translate(-50%, -50%)',
+                                }}
                                 ref={canvasRef}
                                 width={dimensions.width}
                                 height={dimensions.height}
@@ -595,19 +631,10 @@ export default function VideoEditor() {
                         </div>
                     ): <Dropzone accept="video/*" className="w-full aspect-video" onSelect={handleVideoFileSelect} />
                 }
-                    <div className="w-full flex flex-col gap-5 pt-5">
-                        <div className="flex justify-between">
-                            <h1 className="font-extrabold tracking-widest uppercase">Global Timeline</h1>
-                            <div className="flex items-center gap-2">
-                                <Button onClick={() => setZoomLevel(zoomLevel + 0.5)} variant="ghost" size="icon">
-                                    <ZoomIn />
-                                </Button>
-                                <Button onClick={() => setZoomLevel(Math.max(1, zoomLevel - 0.5))} variant="ghost" size="icon">
-                                    <ZoomOut />
-                                </Button>
-                            </div>
-                        </div>
-                        <div className="flex flex-col gap-2">
+                    </ResizablePanel>
+                    <ResizableHandle withHandle />
+                    <ResizablePanel defaultSize="20%">
+                        <div className="flex w-full flex-col gap-2">
                             <div
                                 ref={timelineRef}
                                 className="relative w-full cursor-col-resize touch-none select-none pt-3"
@@ -699,7 +726,7 @@ export default function VideoEditor() {
                                                 className="flex items-start gap-0.25 rounded  bg-neutral-700/65 transition-discrete duration-250 ease-linear"
                                                 style={{ width: `${videoLength * PX_PER_SECOND * zoomLevel}px` }}
                                             >
-                                               {
+                                            {
                                                     clips.map((clip) => <VideoClip framesRef={idFramesRef} key={clip.name} clip={clip} zoomLevel={zoomLevel} />)
                                                     
                                                 }
@@ -737,9 +764,9 @@ export default function VideoEditor() {
                                 <span className="text-sm font-bold">{formatTime(currentTime)}</span>
                             </div>
                         </div>
-                    </div>
-                </div>
-                <div className="grid grid-cols-2 items-start gap-5 w-full p-4 md:p-16 mb-10">
+                    </ResizablePanel>
+                </ResizablePanelGroup>
+                {/* <div className="grid grid-cols-2 items-start gap-5 w-full p-4 md:p-16 mb-10">
                     <div className="bg-neutral-800/50 flex flex-col gap-2 py-6 px-6 rounded">
                         <div className="w-full flex items-center">
                             <div className="w-2/3 p-5">
@@ -747,16 +774,6 @@ export default function VideoEditor() {
                                 <span className="text-sm font-medium text-muted-foreground">Track faces live in the video</span>
                                 
                             </div>
-                            {/* <div className="flex w-1/3 gap-3 justify-center">
-                                <div className="rounded-lg bg-neutral-800 flex flex-col gap-2 items-center justify-center size-20 aspect-square">
-                                    <Users size={20} />
-                                    <span className="text-xs font-bold uppercase">Remove</span>
-                                </div>
-                                <div className="rounded-lg bg-neutral-800 flex flex-col gap-2 items-center justify-center size-20 aspect-square">
-                                    <Users size={20} />
-                                    <span className="text-xs font-bold uppercase">Sticker</span>
-                                </div>
-                            </div> */}
                         </div>
                         <div className="flex flex-col gap-2 px-4 h-64 overflow-y-scroll">
                             {[...faces].map((name) => (
@@ -798,8 +815,8 @@ export default function VideoEditor() {
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
+                </div> */}
+            {/* </div> */}
         </>
     );
 }
