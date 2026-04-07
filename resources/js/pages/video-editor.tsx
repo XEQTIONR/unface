@@ -304,9 +304,24 @@ export default function VideoEditor() {
     }, [duration])
 
     const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>)  => {
+
+        const h = e.currentTarget.videoHeight
+        const w = e.currentTarget.videoWidth
+        const ratio = w/h
+
         setDuration(e.currentTarget.duration)
         setVideoLength(e.currentTarget.duration)
-        setDimensions({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })
+
+        const panel = document.querySelector('#resizable-video-panel') as HTMLDivElement
+        const panelH = panel.offsetHeight || 0
+
+
+        const newW = panelH * ratio
+
+
+        console.table({ w, h, ratio, newW, panelH })
+
+        setDimensions({ width: newW, height: panelH })
         setMetaLoaded(true)
     }
 
@@ -327,6 +342,7 @@ export default function VideoEditor() {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
         if (videoContainerRef.current) {
+
             videoContainerRef.current.scrollIntoView({
                 behavior: 'smooth',
                 block: 'center',
@@ -592,7 +608,7 @@ export default function VideoEditor() {
         <>
             <Head title="Video Editor" />
                 <ResizablePanelGroup orientation="vertical">
-                    <ResizablePanel className="overflow-scroll w-full" defaultSize="80%">
+                    <ResizablePanel id="resizable-video-panel" className="overflow-scroll w-full" defaultSize="80%">
                     {
                     videoFileUrl ? 
                     (    <div id="video-container" ref={videoContainerRef} className="aspect-video size-[10000px] bg-purple-950 overflow-hidden">
@@ -733,7 +749,7 @@ export default function VideoEditor() {
                                                 {
                                                     isPlaying &&  (
                                                         <div 
-                                                            className="h-full bg-red-500 relative"
+                                                            className="h-full min-h-20 bg-red-500 relative"
                                                             style={{ width: `${((currentTime - (currentClip?.start || 0)) * PX_PER_SECOND * zoomLevel) - (PX_PER_SECOND/5)}px` }}
                                                         />
                                                     )
