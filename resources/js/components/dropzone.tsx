@@ -13,10 +13,12 @@ import { cn } from "@/lib/utils";
 import { Button } from "./ui/button"
 
 export default function Dropzone({
+    accept = "*",
     className = "",
     onSelect,
-    onClicked
+    onClicked,
 } : {
+    accept?: string,
     className?: string,
     onSelect : (f: File) => void
     onClicked?: () => void
@@ -106,6 +108,7 @@ export default function Dropzone({
                     </Button>
                 </div>
                 <input 
+                    accept={accept}
                     ref={fileInput} 
                     className="hidden" 
                     type="file"

@@ -593,7 +593,7 @@ export default function VideoEditor() {
                                 height={dimensions.height}
                             />
                         </div>
-                    ): <Dropzone className="w-full aspect-video" onSelect={handleVideoFileSelect} />
+                    ): <Dropzone accept="video/*" className="w-full aspect-video" onSelect={handleVideoFileSelect} />
                 }
                     <div className="w-full flex flex-col gap-5 pt-5">
                         <div className="flex justify-between">
@@ -677,7 +677,7 @@ export default function VideoEditor() {
                                     >
                                         <Triangle
                                             size={15}
-                                            className="relative -left-[7px] -top-1 rotate-180 fill-white stroke-0 text-neutral-300"
+                                            className="relative -left-[7px] -top-1 rotate-180 fill-foreground stroke-0 text-foreground"
                                         />
                                     </div>
                                     <div className="relative flex h-full w-full flex-col gap-1.5 bg-neutral-50 dark:bg-neutral-900 pb-5">
