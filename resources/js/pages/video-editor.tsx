@@ -6,16 +6,13 @@ import * as tf from '@tensorflow/tfjs'
 /** Maintained face-api.js–compatible API for TensorFlow.js 4.x (original `face-api.js` npm targets old TFJS). */
 import * as faceapi from '@vladmandic/face-api'
 import type { FaceDetection } from '@vladmandic/face-api'
-import { Pause, Play, Triangle, Users, ZoomIn, ZoomOut } from 'lucide-react'
+import { Pause, Play, Triangle } from 'lucide-react'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
+import { useDebouncedCallback } from 'use-debounce'
 import Dropzone from '@/components/dropzone'
 import { Button } from '@/components/ui/button'
-import {
-    ResizableHandle,
-    ResizablePanel,
-    ResizablePanelGroup,
-  } from "@/components/ui/resizable"
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { cn } from '@/lib/utils'
 import { create } from '@/routes/videos'
 import type { FaceBox, IdentityBox, IdentityFrame } from '@/types/video'
@@ -28,14 +25,11 @@ import {
     MOVEMENT_THRESHOLD, 
     names as allNames, 
 } from './video-editor/constants'
-import FaceRow from './video-editor/face-row'
 import VideoClip from './video-editor/video-clip'
-import { PanelSize } from 'react-resizable-panels'
 
 export default function VideoEditor() {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const chars = useRef<IdentityBox[]>([])
-    /** Detection box coords are in detection-canvas pixels (dw×dh), not full video pixels. */
     const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const i = useRef(0)
     const idFramesRef = useRef<IdentityFrame[]>([])
@@ -63,17 +57,6 @@ export default function VideoEditor() {
     const [clips, setClips] = useState<Clip[]>([])
     const [currentClip, setCurrentClip] = useState<Clip | null>(null)
     const [videoFileUrl, setVideoFileUrl] = useState<string | undefined>(undefined)
-    
-
-    const handleVideoFileSelect = useCallback((file: File) => {
-        if (videoBlobUrlRef.current) {
-            URL.revokeObjectURL(videoBlobUrlRef.current)
-        }
-
-        const url = URL.createObjectURL(file)
-        videoBlobUrlRef.current = url
-        setVideoFileUrl(url)
-    }, [])
 
     useEffect(() => {
         return () => {
@@ -82,9 +65,6 @@ export default function VideoEditor() {
             }
         }
     }, [])
-    //src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM/highest.mp4"
-    // src="/EShort.mp4"
-    // src="https://cdn.coverr.co/videos/coverr-temp-examplemain-mp4-9501/1080p.mp4"
     
     useEffect(() => {
         detectionCanvasRef.current = document.createElement('canvas')
@@ -304,9 +284,15 @@ export default function VideoEditor() {
         setCurrentTime(t) // really important
     }, [duration])
 
-    const calculateAndSetVideoDimensions = (e: SyntheticEvent<HTMLVideoElement>) => {
-        const h = e.currentTarget.videoHeight
-        const w = e.currentTarget.videoWidth
+    const calculateAndSetVideoDimensions = useCallback(() => {
+        const video = videoRef.current as HTMLVideoElement
+
+        if (!video) {
+            return
+        }
+
+        const h = video.videoHeight
+        const w = video.videoWidth
         const ratio = w/h
 
         const panel = document.querySelector('#resizable-video-panel') as HTMLDivElement
@@ -315,46 +301,32 @@ export default function VideoEditor() {
         const newW = panelH * ratio
 
         setDimensions({ width: newW, height: panelH })
-    }
 
+        setTimeout(() => {
+            paintVideoToDisplayCanvas()
+        }, 100)
+    }, [paintVideoToDisplayCanvas, videoRef])
 
-    const onResize = (panelSize: PanelSize, _ : string|number|undefined, prevPanelSize: PanelSize | undefined) => {
-        console.table({ panelSize, prevPanelSize })
-    }
+    const onResize = useDebouncedCallback(calculateAndSetVideoDimensions, 50)
+
+    const onVideoFileSelect = useCallback((file: File) => {
+        if (videoBlobUrlRef.current) {
+            URL.revokeObjectURL(videoBlobUrlRef.current)
+        }
+
+        const url = URL.createObjectURL(file)
+        videoBlobUrlRef.current = url
+        setVideoFileUrl(url)
+    }, [])
 
     const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>)  => {
-        calculateAndSetVideoDimensions(e)
+        calculateAndSetVideoDimensions()
         setDuration(e.currentTarget.duration)
         setVideoLength(e.currentTarget.duration)
         setMetaLoaded(true)
     }
 
-    const canPlay = () => {
-        const canvas = canvasRef.current
-        const video = videoRef.current
-
-        if (! canvas || ! video) {
-            return
-        }
-
-        const ctx = canvas.getContext('2d')
-        
-        if (! ctx) {
-            return
-        }
-
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-        // if (videoContainerRef.current) {
-
-        //     videoContainerRef.current.scrollIntoView({
-        //         behavior: 'smooth',
-        //         block: 'center',
-        //         inline: 'center'
-        //     })
-        // }
-        
-    }
+    const canPlay = () => paintVideoToDisplayCanvas()
 
     const onPlay = () => {
 
@@ -608,237 +580,184 @@ export default function VideoEditor() {
         i.current = 0
     }
 
-    return (
-        <>
-            <Head title="Video Editor" />
-                <ResizablePanelGroup orientation="vertical">
-                    <ResizablePanel onResize={onResize} id="resizable-video-panel" className="w-full" defaultSize="80%">
-                    {
-                    videoFileUrl ? 
-                    (    <div id="video-container" ref={videoContainerRef} className="w-full h-full bg-purple-950 overflow-hidden">
-                            <video
-                                id="video"
-                                ref={videoRef}
-                                crossOrigin="anonymous"
-                                playsInline
-                                preload="auto"
-                                className={cn(
-                                    'h-full w-full object-cover',
-                                    metaLoaded
-                                        ? 'pointer-events-none fixed inset-0 z-0 opacity-0'
-                                        : 'relative z-0',
-                                )}
-                                src={videoFileUrl}
-                                onLoadedMetadata={onLoadedMetadata}
-                                onCanPlay={canPlay}
-                                onPlay={onPlay}
-                                onPause={onPause}
-                                onSeeked={onSeeked}
-                                onTimeUpdate={onTimeUpdate}
-                                onEnded={onEnded}
-                            />
-                            <canvas
-                                className={cn(!metaLoaded && 'hidden')}
-                                style={{
-                                    marginLeft: '50%',
-                                    marginTop: document.querySelector('#resizable-video-panel')?.clientHeight * 0.05,
-                                    transform: 'translate(-50%, 0%)',
-                                }}
-                                ref={canvasRef}
-                                width={dimensions.width}
-                                height={dimensions.height}
-                            />
-                        </div>
-                    ): <Dropzone accept="video/*" className="w-full aspect-video" onSelect={handleVideoFileSelect} />
-                }
-                    </ResizablePanel>
-                    <ResizableHandle withHandle />
-                    <ResizablePanel defaultSize="20%">
-                        <div className="flex w-full flex-col gap-2">
-                            <div
-                                ref={timelineRef}
-                                className="relative w-full cursor-col-resize touch-none select-none pt-3"
-                                onPointerDown={(e) => {
-                                    e.preventDefault();
-                                    isScrubbingRef.current = true;
-                                    setIsScrubbing(true);
-                                    e.currentTarget.setPointerCapture(e.pointerId);
-                                    setTimeFromClientX(e.clientX);
-                                }}
-                                onPointerMove={(e) => {
-                                    if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
-                                        return;
-                                    }
+    return (<>
+        <Head title="Video Editor" />
+        <ResizablePanelGroup orientation="vertical">
+            <ResizablePanel onResize={onResize} id="resizable-video-panel" className="w-full" defaultSize="80%">
+            {
+            videoFileUrl ? 
+            (    <div id="video-container" ref={videoContainerRef} className="w-full h-full bg-purple-950 overflow-hidden">
+                    <video
+                        id="video"
+                        ref={videoRef}
+                        crossOrigin="anonymous"
+                        playsInline
+                        preload="auto"
+                        className={cn(
+                            'h-full w-full object-cover',
+                            metaLoaded
+                                ? 'pointer-events-none fixed inset-0 z-0 opacity-0'
+                                : 'relative z-0',
+                        )}
+                        src={videoFileUrl}
+                        onLoadedMetadata={onLoadedMetadata}
+                        onCanPlay={canPlay}
+                        onPlay={onPlay}
+                        onPause={onPause}
+                        onSeeked={onSeeked}
+                        onTimeUpdate={onTimeUpdate}
+                        onEnded={onEnded}
+                    />
+                    <canvas
+                        className={cn(!metaLoaded && 'hidden')}
+                        style={{
+                            marginLeft: '50%',
+                            marginTop: document.querySelector('#resizable-video-panel')?.clientHeight * 0.05,
+                            transform: 'translate(-50%, 0%)',
+                        }}
+                        ref={canvasRef}
+                        width={dimensions.width}
+                        height={dimensions.height}
+                    />
+                </div>
+            ): <Dropzone accept="video/*" className="w-full aspect-video" onSelect={onVideoFileSelect} />
+        }
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize="20%">
+                <div className="flex w-full flex-col gap-2">
+                    <div
+                        ref={timelineRef}
+                        className="relative w-full cursor-col-resize touch-none select-none pt-3"
+                        onPointerDown={(e) => {
+                            e.preventDefault();
+                            isScrubbingRef.current = true;
+                            setIsScrubbing(true);
+                            e.currentTarget.setPointerCapture(e.pointerId);
+                            setTimeFromClientX(e.clientX);
+                        }}
+                        onPointerMove={(e) => {
+                            if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
+                                return;
+                            }
 
-                                    setTimeFromClientX(e.clientX);
-                                }}
-                                onPointerUp={(e) => {
-                                    e.currentTarget.releasePointerCapture(e.pointerId);
-                                    isScrubbingRef.current = false;
-                                    setIsScrubbing(false);
+                            setTimeFromClientX(e.clientX);
+                        }}
+                        onPointerUp={(e) => {
+                            e.currentTarget.releasePointerCapture(e.pointerId);
+                            isScrubbingRef.current = false;
+                            setIsScrubbing(false);
 
-                                    if (!detect) {
-                                        const t = videoRef.current?.currentTime || 0
-                                        let low = 0
-                                        let high = idFramesRef.current.length - 1
-                                        let mid = Math.floor((low + high) / 2)
-                                        let found = false
+                            if (!detect) {
+                                const t = videoRef.current?.currentTime || 0
+                                let low = 0
+                                let high = idFramesRef.current.length - 1
+                                let mid = Math.floor((low + high) / 2)
+                                let found = false
 
-                                        while (low <= high && !found) {
-                                            mid = Math.floor((low + high) / 2)
-                                            
-
-                                            if (idFramesRef.current[mid].time < t) {
-                                                //
-                                                low = mid + 1
-                                            } else if (idFramesRef.current[mid].time > t) {
-                                                //
-                                                high = mid - 1
-                                            } else {
-                                                found = true
-                                            }
-                                        }
-
-                                        if (found) {
-                                            i.current = mid;
-                                        } else {
-                                            i.current = low;
-                                        }
+                                while (low <= high && !found) {
+                                    mid = Math.floor((low + high) / 2)
                                     
-                                    }
-                                }}
-                                onPointerCancel={(e) => {
-                                    e.currentTarget.releasePointerCapture(e.pointerId);
-                                    isScrubbingRef.current = false;
-                                    setIsScrubbing(false);
-                                }}
-                            >
-                                <div className="relative min-h-44 h-full w-full overflow-visible pb-5">
-                                    <div
-                                        id="seeker-line"
-                                        className={cn(
-                                            'pointer-events-none absolute -top-3 bottom-0 z-1 -mr-px w-px overflow-visible bg-neutral-300',
-                                            (isScrubbing ? '' : 'transition-all duration-200 ease-linear'))
-                                        }
-                                        style={{left: `${currentTime * PX_PER_SECOND * zoomLevel}px`}}
-                                    >
-                                        <Triangle
-                                            size={15}
-                                            className="relative -left-[7px] -top-1 rotate-180 fill-foreground stroke-0 text-foreground"
-                                        />
-                                    </div>
-                                    <div className="relative flex h-full w-full flex-col gap-1.5 bg-neutral-50 dark:bg-neutral-900 pb-5">
-                                        <div
-                                            className="h-5 w-full transition-all duration-250 ease-linear bg-repeat-x"
-                                            style={{
-                                                backgroundColor: 'transparent',
-                                                backgroundImage: `
-                                                    linear-gradient(90deg, #888 1px, transparent 1px),
-                                                    linear-gradient(90deg, #666 1px, transparent 1px)
-                                                `,
-                                                backgroundSize: `${zoomLevel * 50}px 13px, ${zoomLevel * 10}px 5px`,
-                                                backgroundPosition: '0 top',
-                                            }}
-                                        />
 
-                                        <div className="flex h-full mt-3 w-full items-stretch gap-1">
-                                            <div 
-                                                className="flex items-start gap-0.25 rounded  bg-neutral-700/65 transition-discrete duration-250 ease-linear"
-                                                style={{ width: `${videoLength * PX_PER_SECOND * zoomLevel}px` }}
-                                            >
-                                            {
-                                                    clips.map((clip) => <VideoClip framesRef={idFramesRef} key={clip.name} clip={clip} zoomLevel={zoomLevel} />)
-                                                    
-                                                }
-                                                {
-                                                    isPlaying &&  (
-                                                        <div 
-                                                            className="h-full min-h-20 bg-red-500 relative"
-                                                            style={{ width: `${((currentTime - (currentClip?.start || 0)) * PX_PER_SECOND * zoomLevel) - (PX_PER_SECOND/5)}px` }}
-                                                        />
-                                                    )
-                                                }
-                                                
-                                            </div>
-                                        </div>
+                                    if (idFramesRef.current[mid].time < t) {
+                                        //
+                                        low = mid + 1
+                                    } else if (idFramesRef.current[mid].time > t) {
+                                        //
+                                        high = mid - 1
+                                    } else {
+                                        found = true
+                                    }
+                                }
+
+                                if (found) {
+                                    i.current = mid;
+                                } else {
+                                    i.current = low;
+                                }
+                            
+                            }
+                        }}
+                        onPointerCancel={(e) => {
+                            e.currentTarget.releasePointerCapture(e.pointerId);
+                            isScrubbingRef.current = false;
+                            setIsScrubbing(false);
+                        }}
+                    >
+                        <div className="relative min-h-44 h-full w-full overflow-visible pb-5">
+                            <div
+                                id="seeker-line"
+                                className={cn(
+                                    'pointer-events-none absolute -top-3 bottom-0 z-1 -mr-px w-px overflow-visible bg-neutral-300',
+                                    (isScrubbing ? '' : 'transition-all duration-200 ease-linear'))
+                                }
+                                style={{left: `${currentTime * PX_PER_SECOND * zoomLevel}px`}}
+                            >
+                                <Triangle
+                                    size={15}
+                                    className="relative -left-[7px] -top-1 rotate-180 fill-foreground stroke-0 text-foreground"
+                                />
+                            </div>
+                            <div className="relative flex h-full w-full flex-col gap-1.5 bg-neutral-50 dark:bg-neutral-900 pb-5">
+                                <div
+                                    className="h-5 w-full transition-all duration-250 ease-linear bg-repeat-x"
+                                    style={{
+                                        backgroundColor: 'transparent',
+                                        backgroundImage: `
+                                            linear-gradient(90deg, #888 1px, transparent 1px),
+                                            linear-gradient(90deg, #666 1px, transparent 1px)
+                                        `,
+                                        backgroundSize: `${zoomLevel * 50}px 13px, ${zoomLevel * 10}px 5px`,
+                                        backgroundPosition: '0 top',
+                                    }}
+                                />
+
+                                <div className="flex h-full mt-3 w-full items-stretch gap-1">
+                                    <div 
+                                        className="flex items-start gap-0.25 rounded  bg-neutral-700/65 transition-discrete duration-250 ease-linear"
+                                        style={{ width: `${videoLength * PX_PER_SECOND * zoomLevel}px` }}
+                                    >
+                                    {
+                                            clips.map((clip) => <VideoClip framesRef={idFramesRef} key={clip.name} clip={clip} zoomLevel={zoomLevel} />)
+                                            
+                                        }
+                                        {
+                                            isPlaying &&  (
+                                                <div 
+                                                    className="h-full min-h-20 bg-red-500 relative"
+                                                    style={{ width: `${((currentTime - (currentClip?.start || 0)) * PX_PER_SECOND * zoomLevel) - (PX_PER_SECOND/5)}px` }}
+                                                />
+                                            )
+                                        }
+                                        
                                     </div>
                                 </div>
                             </div>
-                            <div className="relative z-10 flex items-center gap-2">
-                                <Button
-                                    disabled={!videoFileUrl}
-                                    onClick={() => {
-                                        if (videoFileUrl) {
-                                            if (isPlaying) {
-                                                videoRef.current?.pause()
-                                            } else {
-                                                videoRef.current?.play()
-                                            }
-                                        } 
-                                    }}
-                                    variant="secondary"
-                                    size="icon"
-                                >
-                                    {isPlaying ? <Pause /> : <Play />}
-                                </Button>
-                                <span className="text-sm font-bold">{formatTime(currentTime)}</span>
-                            </div>
-                        </div>
-                    </ResizablePanel>
-                </ResizablePanelGroup>
-                {/* <div className="grid grid-cols-2 items-start gap-5 w-full p-4 md:p-16 mb-10">
-                    <div className="bg-neutral-800/50 flex flex-col gap-2 py-6 px-6 rounded">
-                        <div className="w-full flex items-center">
-                            <div className="w-2/3 p-5">
-                                <h3 className=" font-extrabold uppercase">Face Tracking</h3>
-                                <span className="text-sm font-medium text-muted-foreground">Track faces live in the video</span>
-                                
-                            </div>
-                        </div>
-                        <div className="flex flex-col gap-2 px-4 h-64 overflow-y-scroll">
-                            {[...faces].map((name) => (
-                                <FaceRow 
-                                    key={name} 
-                                    name={name} 
-                                    allFaces={faces} 
-                                    currentFaces={currentFaces}
-                                    onSubmit={(newName, oldName) => {
-                                        
-                                        idFramesRef.current = idFramesRef.current.map((frame) => ({                                         
-                                            time: frame.time,
-                                            boxes: frame.boxes.map((box) => {
-                                                if (box.name === oldName) {
-                                                    return { ...box, name: newName }
-                                                }
-
-                                                return box
-                                            })
-                                        }))
-
-                                        setFaces(new Set([...[...faces].filter((n) => n !== oldName), newName]))
-                                    }}
-                                />
-                            ))}
                         </div>
                     </div>
-                    <div className="bg-neutral-800/50 flex flex-col gap-2 justify-center px-8 py-8 rounded">
-                        <h3 className="font-extrabold uppercase">Sticker Library</h3>
-                        <div className="flex gap-3 mt-4">
-                            <div className="rounded-lg bg-neutral-800 flex flex-col gap-2 items-center justify-center size-16 aspect-square">
-                                <Users />
-                            </div>
-                            <div className="rounded-lg bg-neutral-800 flex flex-col gap-2 items-center justify-center size-16 aspect-square">
-                                <Users />
-                            </div>
-                            <div className="rounded-lg bg-neutral-800 flex flex-col gap-2 items-center justify-center size-16 aspect-square">
-                                <Users />
-                            </div>
-                        </div>
+                    <div className="relative z-10 flex items-center gap-2">
+                        <Button
+                            disabled={!videoFileUrl}
+                            onClick={() => {
+                                if (videoFileUrl) {
+                                    if (isPlaying) {
+                                        videoRef.current?.pause()
+                                    } else {
+                                        videoRef.current?.play()
+                                    }
+                                } 
+                            }}
+                            variant="secondary"
+                            size="icon"
+                        >
+                            {isPlaying ? <Pause /> : <Play />}
+                        </Button>
+                        <span className="text-sm font-bold">{formatTime(currentTime)}</span>
                     </div>
-                </div> */}
-            {/* </div> */}
-        </>
-    );
+                </div>
+            </ResizablePanel>
+        </ResizablePanelGroup>
+    </>)
 }
 
 VideoEditor.layout = {
