@@ -30,6 +30,7 @@ import {
 } from './video-editor/constants'
 import FaceRow from './video-editor/face-row'
 import VideoClip from './video-editor/video-clip'
+import { PanelSize } from 'react-resizable-panels'
 
 export default function VideoEditor() {
     const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -132,7 +133,7 @@ export default function VideoEditor() {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [])
 
     useEffect(() => {
         if (!faceApiReady || !isPlaying || !detect) {
@@ -303,25 +304,28 @@ export default function VideoEditor() {
         setCurrentTime(t) // really important
     }, [duration])
 
-    const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>)  => {
-
+    const calculateAndSetVideoDimensions = (e: SyntheticEvent<HTMLVideoElement>) => {
         const h = e.currentTarget.videoHeight
         const w = e.currentTarget.videoWidth
         const ratio = w/h
 
-        setDuration(e.currentTarget.duration)
-        setVideoLength(e.currentTarget.duration)
-
         const panel = document.querySelector('#resizable-video-panel') as HTMLDivElement
-        const panelH = panel.offsetHeight || 0
-
+        const panelH = (panel.offsetHeight * 0.9) || 0
 
         const newW = panelH * ratio
 
-
-        console.table({ w, h, ratio, newW, panelH })
-
         setDimensions({ width: newW, height: panelH })
+    }
+
+
+    const onResize = (panelSize: PanelSize, _ : string|number|undefined, prevPanelSize: PanelSize | undefined) => {
+        console.table({ panelSize, prevPanelSize })
+    }
+
+    const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>)  => {
+        calculateAndSetVideoDimensions(e)
+        setDuration(e.currentTarget.duration)
+        setVideoLength(e.currentTarget.duration)
         setMetaLoaded(true)
     }
 
@@ -341,14 +345,14 @@ export default function VideoEditor() {
 
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-        if (videoContainerRef.current) {
+        // if (videoContainerRef.current) {
 
-            videoContainerRef.current.scrollIntoView({
-                behavior: 'smooth',
-                block: 'center',
-                inline: 'center'
-            })
-        }
+        //     videoContainerRef.current.scrollIntoView({
+        //         behavior: 'smooth',
+        //         block: 'center',
+        //         inline: 'center'
+        //     })
+        // }
         
     }
 
@@ -608,10 +612,10 @@ export default function VideoEditor() {
         <>
             <Head title="Video Editor" />
                 <ResizablePanelGroup orientation="vertical">
-                    <ResizablePanel id="resizable-video-panel" className="overflow-scroll w-full" defaultSize="80%">
+                    <ResizablePanel onResize={onResize} id="resizable-video-panel" className="w-full" defaultSize="80%">
                     {
                     videoFileUrl ? 
-                    (    <div id="video-container" ref={videoContainerRef} className="aspect-video size-[10000px] bg-purple-950 overflow-hidden">
+                    (    <div id="video-container" ref={videoContainerRef} className="w-full h-full bg-purple-950 overflow-hidden">
                             <video
                                 id="video"
                                 ref={videoRef}
@@ -621,7 +625,7 @@ export default function VideoEditor() {
                                 className={cn(
                                     'h-full w-full object-cover',
                                     metaLoaded
-                                        ? 'pointer-events-none absolute inset-0 z-0 opacity-0'
+                                        ? 'pointer-events-none fixed inset-0 z-0 opacity-0'
                                         : 'relative z-0',
                                 )}
                                 src={videoFileUrl}
@@ -637,8 +641,8 @@ export default function VideoEditor() {
                                 className={cn(!metaLoaded && 'hidden')}
                                 style={{
                                     marginLeft: '50%',
-                                    marginTop: '50%',
-                                    transform: 'translate(-50%, -50%)',
+                                    marginTop: document.querySelector('#resizable-video-panel')?.clientHeight * 0.05,
+                                    transform: 'translate(-50%, 0%)',
                                 }}
                                 ref={canvasRef}
                                 width={dimensions.width}
