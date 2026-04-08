@@ -41,6 +41,7 @@ export default function VideoEditor() {
     const videoRef = useRef<HTMLVideoElement>(null)
     const videoBlobUrlRef = useRef<string | undefined>(undefined)
     const videoContainerRef = useRef<HTMLDivElement>(null)
+    const videoPanelRef = useRef<HTMLDivElement>(null)
 
     const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
     const [currentTime, setCurrentTime] = useState(0)
@@ -57,6 +58,13 @@ export default function VideoEditor() {
     const [clips, setClips] = useState<Clip[]>([])
     const [currentClip, setCurrentClip] = useState<Clip | null>(null)
     const [videoFileUrl, setVideoFileUrl] = useState<string | undefined>(undefined)
+    const [videoPanelHeight, setVideoPanelHeight] = useState(0)
+
+    useEffect(() => {
+        if (videoPanelRef.current) {
+            setVideoPanelHeight(videoPanelRef.current.clientHeight)
+        }
+    }, [videoPanelRef])
 
     useEffect(() => {
         return () => {
@@ -295,7 +303,7 @@ export default function VideoEditor() {
         const w = video.videoWidth
         const ratio = w/h
 
-        const panel = document.querySelector('#resizable-video-panel') as HTMLDivElement
+        const panel = videoPanelRef.current as HTMLDivElement
         const panelH = (panel.offsetHeight * 0.9) || 0
 
         const newW = panelH * ratio
@@ -583,7 +591,7 @@ export default function VideoEditor() {
     return (<>
         <Head title="Video Editor" />
         <ResizablePanelGroup orientation="vertical">
-            <ResizablePanel onResize={onResize} id="resizable-video-panel" className="w-full" defaultSize="80%">
+            <ResizablePanel elementRef={videoPanelRef} onResize={onResize} id="resizable-video-panel" className="w-full" defaultSize="80%">
             {
             videoFileUrl ? 
             (    <div id="video-container" ref={videoContainerRef} className="w-full h-full bg-purple-950 overflow-hidden">
@@ -612,7 +620,7 @@ export default function VideoEditor() {
                         className={cn(!metaLoaded && 'hidden')}
                         style={{
                             marginLeft: '50%',
-                            marginTop: document.querySelector('#resizable-video-panel')?.clientHeight * 0.05,
+                            marginTop: videoPanelHeight * 0.05,
                             transform: 'translate(-50%, 0%)',
                         }}
                         ref={canvasRef}
