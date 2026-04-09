@@ -6,7 +6,7 @@ import * as tf from '@tensorflow/tfjs'
 /** Maintained face-api.js–compatible API for TensorFlow.js 4.x (original `face-api.js` npm targets old TFJS). */
 import * as faceapi from '@vladmandic/face-api'
 import type { FaceDetection } from '@vladmandic/face-api'
-import { StaticCanvas } from 'fabric'
+import { FabricText, Rect, StaticCanvas } from 'fabric'
 import { Pause, Play, Triangle } from 'lucide-react'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
@@ -27,8 +27,94 @@ import {
 } from './video-editor/constants'
 import VideoClip from './video-editor/video-clip'
 
+const FACE_OVERLAY_KEY = '__unfaceFaceOverlay' as const
+
+const cyanOverlayStroke = 'rgba(0, 255, 255, 0.95)'
+
+function removeFabricFaceOverlays(f: StaticCanvas) {
+    const tagged = f
+        .getObjects()
+        .filter(
+            (o) =>
+                (o as unknown as Record<string, boolean | undefined>)[FACE_OVERLAY_KEY] === true,
+        )
+
+    if (tagged.length) {
+        f.remove(...tagged)
+    }
+}
+
+type FaceFabricRect = {
+    x: number
+    y: number
+    w: number
+    h: number
+    dashed?: boolean
+}
+
+type FaceFabricLabel = { x: number; y: number; text: string }
+
+function tagFaceOverlay<T>(o: T): T {
+    ;(o as unknown as Record<string, boolean>)[FACE_OVERLAY_KEY] = true
+
+    return o
+}
+
+function replaceFabricFaceOverlays(
+    f: StaticCanvas,
+    rects: FaceFabricRect[],
+    labels: FaceFabricLabel[],
+    opts: { strokeWidth: number; fontSize: number },
+) {
+    removeFabricFaceOverlays(f)
+
+    for (const r of rects) {
+        f.add(
+            tagFaceOverlay(
+                new Rect({
+                    left: r.x,
+                    top: r.y,
+                    width: Math.max(1, r.w),
+                    height: Math.max(1, r.h),
+                    fill: 'transparent',
+                    stroke: cyanOverlayStroke,
+                    strokeWidth: opts.strokeWidth,
+                    strokeUniform: true,
+                    strokeDashArray: r.dashed ? [10, 30] : undefined,
+                    originX: 'left',
+                    originY: 'top',
+                    selectable: false,
+                    evented: false,
+                    objectCaching: false,
+                }),
+            ),
+        )
+    }
+
+    for (const t of labels) {
+        f.add(
+            tagFaceOverlay(
+                new FabricText(t.text, {
+                    left: t.x,
+                    top: t.y,
+                    fill: cyanOverlayStroke,
+                    fontSize: opts.fontSize,
+                    fontFamily: 'Arial',
+                    originX: 'left',
+                    originY: 'top',
+                    selectable: false,
+                    evented: false,
+                    objectCaching: false,
+                }),
+            ),
+        )
+    }
+
+    f.renderAll()
+}
+
 type DisplayCanvasDraw = {
-    ctx: CanvasRenderingContext2D
+    fCanvas: StaticCanvas
     /** Logical width (CSS px), same as Fabric canvas width — use for face overlay math. */
     cw: number
     ch: number
@@ -334,12 +420,11 @@ export default function VideoEditor() {
             fCanvas.remove(...legacyFabricImages)
         }
 
+        removeFabricFaceOverlays(fCanvas)
         fCanvas.calcViewportBoundaries()
         fCanvas.renderAll()
 
-        const ctx = fCanvas.getContext()
-
-        return { ctx, cw: w, ch: h, vw, vh }
+        return { fCanvas, cw: w, ch: h, vw, vh }
     }, [])
 
     const setTimeFromClientX = useCallback((clientX: number) => {
@@ -444,17 +529,16 @@ export default function VideoEditor() {
                 return;
             }
 
-            const { ctx, cw, ch, vw, vh } = drawn;
+            const { fCanvas, cw, ch, vw, vh } = drawn;
 
             const { dw, dh } = lastDetectionDimsRef.current;
             const sx = dw > 0 ? cw / dw : cw / vw;
             const sy = dh > 0 ? ch / dh : ch / vh;
 
-            ctx.strokeStyle = 'rgba(0, 255, 255, 0.95)';
-            ctx.fillStyle = 'rgba(0, 255, 255, 0.95)';
-            ctx.font = '60px Arial';
-            ctx.lineWidth = Math.max(2, Math.round(cw / 400));
-            ctx.setLineDash([]);
+            const overlayRects: FaceFabricRect[] = []
+            const overlayLabels: FaceFabricLabel[] = []
+            const strokeW = Math.max(2, Math.round(cw / 400))
+            const fontSize = 30
             const currentNames: string[] = []
 
             if (detect) {
@@ -465,16 +549,16 @@ export default function VideoEditor() {
 
                 if (latestFacesRef.current.length > 0) {
                     for (const rect of latestFacesRef.current.sort((a, b) => a.x - b.x)) {
-                        ctx.strokeRect(
-                            rect.x * sx,
-                            rect.y * sy,
-                            rect.w * sx,
-                            rect.h * sy,
-                        );
+                        overlayRects.push({
+                            x: rect.x * sx,
+                            y: rect.y * sy,
+                            w: rect.w * sx,
+                            h: rect.h * sy,
+                        })
     
                         if (chars.current.length === 0) { // no characters yet
                             const name = names.current[ns.length % names.current.length] + Math.floor(Math.random() * 1000)
-                            ctx.fillText(name, rect.x * sx, rect.y * sy)
+                            overlayLabels.push({ x: rect.x * sx, y: rect.y * sy, text: name })
                             const r = {
                                 name: name,
                                 x: rect.x,
@@ -491,7 +575,7 @@ export default function VideoEditor() {
                             const found = comparedTo.find(({x, y}) => ((x - rect.x) ** 2 + (y - rect.y) ** 2) < MOVEMENT_THRESHOLD ** 2)
     
                             if (found) {
-                                ctx.fillText(found.name, rect.x * sx, rect.y * sy)
+                                overlayLabels.push({ x: rect.x * sx, y: rect.y * sy, text: found.name })
                                 ns = ns.map((n) => {
                                     if (n.name === found.name) {
                                         n.x = rect.x;
@@ -515,7 +599,7 @@ export default function VideoEditor() {
                                 comparedTo = comparedTo.filter(({x, y, name}) => x !== found.x && y !== found.y && name !== found.name);
                             } else {
                                 const n = names.current[ns.length % names.current.length] + Math.floor(Math.random() * 1000) 
-                                ctx.fillText(n, rect.x * sx, rect.y * sy)
+                                overlayLabels.push({ x: rect.x * sx, y: rect.y * sy, text: n })
                                 ns.push({
                                     name: n,
                                     x: rect.x,
@@ -559,7 +643,6 @@ export default function VideoEditor() {
                 }
             } else if (i.current < idFramesRef.current.length) { // render recorded frames
 
-                ctx.setLineDash([10, 30]);
                 const t = video.currentTime
 
                 if (Math.abs(t - idFramesRef.current[i.current].time) < 0.05) {
@@ -567,8 +650,14 @@ export default function VideoEditor() {
                     const fr = []
 
                     for (const box of idFramesRef.current[i.current].boxes) {
-                        ctx.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy)
-                        ctx.fillText(box.name, box.x * sx, box.y * sy)
+                        overlayRects.push({
+                            x: box.x * sx,
+                            y: box.y * sy,
+                            w: box.w * sx,
+                            h: box.h * sy,
+                            dashed: true,
+                        })
+                        overlayLabels.push({ x: box.x * sx, y: box.y * sy, text: box.name })
                         fr.push(box.name)
                     }
 
@@ -584,8 +673,14 @@ export default function VideoEditor() {
                         const fr = []
 
                         for (const box of idFramesRef.current[i.current - 1].boxes) {
-                            ctx.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy)
-                            ctx.fillText(box.name, box.x * sx, box.y * sy)
+                            overlayRects.push({
+                                x: box.x * sx,
+                                y: box.y * sy,
+                                w: box.w * sx,
+                                h: box.h * sy,
+                                dashed: true,
+                            })
+                            overlayLabels.push({ x: box.x * sx, y: box.y * sy, text: box.name })
                             fr.push(box.name)
                         }
 
@@ -593,6 +688,11 @@ export default function VideoEditor() {
                     }
                 }
             }
+
+            replaceFabricFaceOverlays(fCanvas, overlayRects, overlayLabels, {
+                strokeWidth: strokeW,
+                fontSize,
+            })
 
             requestAnimationFrame(step)
         }
@@ -642,16 +742,30 @@ export default function VideoEditor() {
             return
         }
 
-        const { ctx, cw, ch, vw, vh } = drawn
+        const { fCanvas, cw, ch, vw, vh } = drawn
 
         const { dw, dh } = lastDetectionDimsRef.current
         const sx = dw > 0 ? cw / dw : cw / vw
         const sy = dh > 0 ? ch / dh : ch / vh
 
-        for (const box of idFramesRef.current[idFramesRef.current.length - 1].boxes) {
-            ctx.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy)
-            ctx.fillText(box.name, box.x * sx, box.y * sy)
+        const boxes = idFramesRef.current[idFramesRef.current.length - 1].boxes
+        const overlayRects: FaceFabricRect[] = []
+        const overlayLabels: FaceFabricLabel[] = []
+
+        for (const box of boxes) {
+            overlayRects.push({
+                x: box.x * sx,
+                y: box.y * sy,
+                w: box.w * sx,
+                h: box.h * sy,
+            })
+            overlayLabels.push({ x: box.x * sx, y: box.y * sy, text: box.name })
         }
+
+        replaceFabricFaceOverlays(fCanvas, overlayRects, overlayLabels, {
+            strokeWidth: Math.max(2, Math.round(cw / 400)),
+            fontSize: 60,
+        })
 
         i.current = 0
     }
