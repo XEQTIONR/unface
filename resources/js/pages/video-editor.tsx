@@ -6,6 +6,7 @@ import * as tf from '@tensorflow/tfjs'
 /** Maintained face-api.js–compatible API for TensorFlow.js 4.x (original `face-api.js` npm targets old TFJS). */
 import * as faceapi from '@vladmandic/face-api'
 import type { FaceDetection } from '@vladmandic/face-api'
+import { StaticCanvas } from 'fabric'
 import { Pause, Play, Triangle } from 'lucide-react'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
@@ -26,8 +27,18 @@ import {
 } from './video-editor/constants'
 import VideoClip from './video-editor/video-clip'
 
+type DisplayCanvasDraw = {
+    ctx: CanvasRenderingContext2D
+    /** Logical width (CSS px), same as Fabric canvas width — use for face overlay math. */
+    cw: number
+    ch: number
+    vw: number
+    vh: number
+}
+
 export default function VideoEditor() {
     const canvasRef = useRef<HTMLCanvasElement>(null)
+    const fabricCanvasRef = useRef<StaticCanvas | null>(null)
     const chars = useRef<IdentityBox[]>([])
     const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const i = useRef(0)
@@ -230,6 +241,13 @@ export default function VideoEditor() {
         };
     }, [faceApiReady, isPlaying, detect])
 
+    useEffect(() => {
+        return () => {
+            void fabricCanvasRef.current?.dispose()
+            fabricCanvasRef.current = null
+        }
+    }, [])
+
     const formatTime = (time: number, withHours: boolean = false) => {
         const hours = Math.floor(time / 3600)
         const minutes = Math.floor((time % 3600) / 60)
@@ -240,35 +258,88 @@ export default function VideoEditor() {
         return withHours ? `${hours.toString().padStart(2, '0')}:${sub}` : sub
     }
     
-    const paintVideoToDisplayCanvas = useCallback(() => {
+    /**
+     * Fabric StaticCanvas drives sizing/retina/DPR; the live `<video>` is painted with 2D
+     * `drawImage` in `before:render`. `FabricImage(video)` is unreliable across browsers for
+     * decoded frames — this keeps Fabric while matching native canvas behaviour.
+     */
+    const paintVideoToDisplayCanvas = useCallback((): DisplayCanvasDraw | null => {
         const video = videoRef.current
-        const canvas = canvasRef.current
+        const el = canvasRef.current
 
-        if (!video || !canvas) {
-            return
-        }
-
-        const ctx = canvas.getContext('2d')
-
-        if (!ctx) {
-            return
+        if (!video || !el) {
+            return null
         }
 
         const vw = video.videoWidth
         const vh = video.videoHeight
 
         if (!vw || !vh) {
-            return
+            return null
         }
 
-        const cw = canvas.width
-        const ch = canvas.height
+        const w = video.clientWidth || video.offsetWidth
+        const h = video.clientHeight || video.offsetHeight
 
-        if (!cw || !ch) {
-            return
+        if (!w || !h) {
+            return null
         }
 
-        ctx.drawImage(video, 0, 0, cw, ch)
+        let fCanvas = fabricCanvasRef.current
+
+        if (fCanvas && fCanvas.lowerCanvasEl !== el) {
+            void fCanvas.dispose()
+            fCanvas = null
+            fabricCanvasRef.current = null
+        }
+
+        if (!fCanvas) {
+            fCanvas = new StaticCanvas(el, {
+                width: w,
+                height: h,
+                enableRetinaScaling: true,
+                skipOffscreen: false,
+            })
+            fabricCanvasRef.current = fCanvas
+
+            fCanvas.on('before:render', ({ ctx }) => {
+                const v = videoRef.current
+                const c = fabricCanvasRef.current
+
+                if (
+                    !v ||
+                    !c ||
+                    c !== fCanvas ||
+                    v.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+                    !v.videoWidth ||
+                    !v.videoHeight
+                ) {
+                    return
+                }
+
+                const lw = c.getWidth()
+                const lh = c.getHeight()
+
+                ctx.imageSmoothingEnabled = true
+                ctx.imageSmoothingQuality = 'high'
+                ctx.drawImage(v, 0, 0, lw, lh)
+            })
+        } else if (fCanvas.getWidth() !== w || fCanvas.getHeight() !== h) {
+            fCanvas.setDimensions({ width: w, height: h })
+        }
+
+        const legacyFabricImages = fCanvas.getObjects().filter((o) => o.type === 'image')
+
+        if (legacyFabricImages.length) {
+            fCanvas.remove(...legacyFabricImages)
+        }
+
+        fCanvas.calcViewportBoundaries()
+        fCanvas.renderAll()
+
+        const ctx = fCanvas.getContext()
+
+        return { ctx, cw: w, ch: h, vw, vh }
     }, [])
 
     const setTimeFromClientX = useCallback((clientX: number) => {
@@ -325,6 +396,9 @@ export default function VideoEditor() {
             URL.revokeObjectURL(videoBlobUrlRef.current)
         }
 
+        void fabricCanvasRef.current?.dispose()
+        fabricCanvasRef.current = null
+
         const url = URL.createObjectURL(file)
         videoBlobUrlRef.current = url
         setVideoFileUrl(url)
@@ -332,7 +406,10 @@ export default function VideoEditor() {
 
     const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>)  => {
         calculateAndSetVideoDimensions()
-        setShowWhat('canvas')
+        // setTimeout(() => {
+            setShowWhat('canvas')
+        // }, 100)
+        
         setDuration(e.currentTarget.duration)
         setVideoLength(e.currentTarget.duration)
         setMetaLoaded(true)
@@ -351,35 +428,23 @@ export default function VideoEditor() {
         }
 
         setIsPlaying(true)
-        const ctx = canvasRef.current?.getContext('2d')
 
         function step() {
             const video = videoRef.current;
-            const canvas = canvasRef.current;
 
-            if (!video || !canvas || !ctx || video.paused || video.ended) {
+            if (!video || video.paused || video.ended) {
                 return;
             }
 
-            const vw = video.videoWidth;
-            const vh = video.videoHeight;
+            const drawn = paintVideoToDisplayCanvas();
 
-            if (!vw || !vh) {
+            if (!drawn) {
                 requestAnimationFrame(step);
 
                 return;
             }
 
-            const cw = canvas.width;
-            const ch = canvas.height;
-
-            if (!cw || !ch) {
-                requestAnimationFrame(step);
-
-                return;
-            }
-
-            ctx.drawImage(video, 0, 0, cw, ch);
+            const { ctx, cw, ch, vw, vh } = drawn;
 
             const { dw, dh } = lastDetectionDimsRef.current;
             const sx = dw > 0 ? cw / dw : cw / vw;
@@ -569,24 +634,23 @@ export default function VideoEditor() {
         setDetect(false)
         latestFacesRef.current = []
 
-        const video = videoRef.current
-        const vw = video?.videoWidth || 0
-        const vh = video?.videoHeight || 0
-        const ctx = canvasRef.current?.getContext('2d')
-        const canvas = canvasRef.current
-        const cw = canvas?.width || 0
-        const ch = canvas?.height || 0
+        const drawn = paintVideoToDisplayCanvas()
 
-        
+        if (!drawn || !idFramesRef.current.length) {
+            i.current = 0
+
+            return
+        }
+
+        const { ctx, cw, ch, vw, vh } = drawn
+
         const { dw, dh } = lastDetectionDimsRef.current
         const sx = dw > 0 ? cw / dw : cw / vw
         const sy = dh > 0 ? ch / dh : ch / vh
 
         for (const box of idFramesRef.current[idFramesRef.current.length - 1].boxes) {
-            if (ctx) {
-                ctx.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy)
-                ctx.fillText(box.name, box.x * sx, box.y * sy)
-            }
+            ctx.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy)
+            ctx.fillText(box.name, box.x * sx, box.y * sy)
         }
 
         i.current = 0
@@ -696,7 +760,8 @@ export default function VideoEditor() {
                             'object-cover pointer-events-none inset-0',
                             metaLoaded && showWhat === 'video'
                                 ? 'relative left-1/2 -translate-x-1/2'
-                                : 'fixed z-0 opacity-0',
+                                : // Near-opaque 0: full opacity-0 often yields blank drawImage into canvas
+                                  'fixed z-0 opacity-[0.01]',
                         )}
                         style={{
                             aspectRatio: aspectRatio,
@@ -721,8 +786,8 @@ export default function VideoEditor() {
                             
                         }}
                         ref={canvasRef}
-                        width={videoPanelHeight * 0.9 * (aspectRatio || 1)}
-                        height={videoPanelHeight * 0.9}
+                        //width={videoPanelHeight * 0.9 * (aspectRatio || 1)}
+                        //height={videoPanelHeight * 0.9}
                     />
                 </div>
             ): <Dropzone accept="video/*" className="w-full aspect-video" onSelect={onVideoFileSelect} />
