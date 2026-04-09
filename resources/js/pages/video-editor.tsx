@@ -25,7 +25,8 @@ import {
     MOVEMENT_THRESHOLD, 
     names as allNames, 
 } from './video-editor/constants'
-import { paintVideoClipsTrack } from './video-editor/paint-clips-canvas'
+import { syncClipsFabricCanvas } from './video-editor/paint-clips-fabric'
+import { syncRulerFabricCanvas } from './video-editor/paint-ruler-fabric'
 
 /** Ruler/timeline content stays at least this far past the playhead (px). */
 const TIMELINE_RIGHT_MARGIN_PX = 64
@@ -153,7 +154,9 @@ export default function VideoEditor() {
     const names = useRef(allNames)
     const timelineScrollRef = useRef<HTMLDivElement>(null)
     const rulerCanvasRef = useRef<HTMLCanvasElement>(null)
+    const rulerFabricCanvasRef = useRef<StaticCanvas | null>(null)
     const clipsCanvasRef = useRef<HTMLCanvasElement>(null)
+    const clipsFabricCanvasRef = useRef<StaticCanvas | null>(null)
     const clipRecordingStartRef = useRef(0)
     const paintClipsCanvasRef = useRef<() => void>(() => {})
     const rulerContainerRef = useRef<HTMLDivElement>(null)
@@ -353,10 +356,14 @@ export default function VideoEditor() {
         return () => {
             void fabricCanvasRef.current?.dispose()
             fabricCanvasRef.current = null
+            rulerFabricCanvasRef.current?.dispose()
+            rulerFabricCanvasRef.current = null
+            clipsFabricCanvasRef.current?.dispose()
+            clipsFabricCanvasRef.current = null
         }
     }, [])
 
-    const formatTime = (time: number, withHours: boolean = false) => {
+    const formatTime = useCallback((time: number, withHours: boolean = false) => {
         const hours = Math.floor(time / 3600)
         const minutes = Math.floor((time % 3600) / 60)
         const seconds = time % 60
@@ -364,7 +371,7 @@ export default function VideoEditor() {
         const sub = `${minutes.toString().padStart(2, '0')}:${seconds.toFixed(0).toString().padStart(2, '0')}`
 
         return withHours ? `${hours.toString().padStart(2, '0')}:${sub}` : sub
-    }
+    }, [])
     
     /**
      * Fabric StaticCanvas drives sizing/retina/DPR; the live `<video>` is painted with 2D
@@ -559,6 +566,10 @@ export default function VideoEditor() {
 
         void fabricCanvasRef.current?.dispose()
         fabricCanvasRef.current = null
+        rulerFabricCanvasRef.current?.dispose()
+        rulerFabricCanvasRef.current = null
+        clipsFabricCanvasRef.current?.dispose()
+        clipsFabricCanvasRef.current = null
 
         const url = URL.createObjectURL(file)
         videoBlobUrlRef.current = url
@@ -855,10 +866,10 @@ export default function VideoEditor() {
     }
 
     const paintTimelineRuler = useCallback(() => {
-        const canvas = rulerCanvasRef.current
+        const el = rulerCanvasRef.current
         const container = rulerContainerRef.current
 
-        if (!canvas || !container) {
+        if (!el || !container) {
             return
         }
 
@@ -881,68 +892,40 @@ export default function VideoEditor() {
         })
 
         const cssHeight = 36
-        const dpr = window.devicePixelRatio || 1
 
-        canvas.width = Math.max(1, Math.floor(cssWidth * dpr))
-        canvas.height = Math.max(1, Math.floor(cssHeight * dpr))
-        canvas.style.width = `${cssWidth}px`
-        //canvas.style.height = `${cssHeight}px`
+        let fabricCanvas = rulerFabricCanvasRef.current
 
-        const ctx = canvas.getContext('2d')
-
-        if (!ctx) {
-            return
+        if (fabricCanvas && fabricCanvas.lowerCanvasEl !== el) {
+            fabricCanvas.dispose()
+            fabricCanvas = null
+            rulerFabricCanvasRef.current = null
         }
 
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-        ctx.clearRect(0, 0, cssWidth, cssHeight)
-
-        const majorStep = zoomLevel * 50
-        const minorStep = zoomLevel * 10
-
-        if (minorStep <= 0 || majorStep <= 0) {
-            return
+        if (!fabricCanvas) {
+            fabricCanvas = new StaticCanvas(el, {
+                width: cssWidth,
+                height: cssHeight,
+                enableRetinaScaling: true,
+            })
+            rulerFabricCanvasRef.current = fabricCanvas
         }
 
-        ctx.font = '12px Arial'
-
-        for (let i = 0; ; i++) {
-            const x = i * minorStep
-
-            if (x > cssWidth) {
-                break
-            }
-
-            if (i % 5 === 0) {
-                continue
-            }
-
-            ctx.fillStyle = '#444'
-            ctx.fillRect(Math.floor(x), 2, 1, 3)
-        }
-
-        for (let j = 0; ; j++) {
-            const x = j * majorStep
-
-            if (x > cssWidth) {
-                break
-            }
-
-            ctx.fillStyle = '#444'
-            ctx.fillRect(Math.floor(x), 2, 1, 20)
-            ctx.fillStyle = '#888'
-            ctx.fillText(formatTime(j*5), Math.floor(x) + 8, 24)
-        }
-    }, [zoomLevel, currentTime, duration, videoLength, timelineViewportWidth])
+        syncRulerFabricCanvas(fabricCanvas, {
+            cssWidth,
+            cssHeight,
+            zoomLevel,
+            formatTime: (t) => formatTime(t),
+        })
+    }, [zoomLevel, currentTime, duration, videoLength, timelineViewportWidth, formatTime])
 
     useEffect(() => {
         paintTimelineRuler()
     }, [paintTimelineRuler])
 
     const paintClipsCanvas = useCallback(() => {
-        const canvas = clipsCanvasRef.current
+        const el = clipsCanvasRef.current
 
-        if (!canvas) {
+        if (!el) {
             return
         }
 
@@ -955,17 +938,52 @@ export default function VideoEditor() {
                     ? videoRef.current.duration
                     : 0
 
-        paintVideoClipsTrack(canvas, idFramesRef.current, {
+        const videoLengthSec = Math.max(vl, 1e-6)
+        const pxPerSec = PX_PER_SECOND * zoomLevel
+        const trackWidthPx = Math.max(
+            1,
+            timelineSpanPx,
+            videoLengthSec * pxPerSec,
+        )
+        const placeholderH = 80
+
+        let fabricCanvas = clipsFabricCanvasRef.current
+
+        if (fabricCanvas && fabricCanvas.lowerCanvasEl !== el) {
+            fabricCanvas.dispose()
+            fabricCanvas = null
+            clipsFabricCanvasRef.current = null
+        }
+
+        if (!fabricCanvas) {
+            fabricCanvas = new StaticCanvas(el, {
+                width: trackWidthPx,
+                height: placeholderH,
+                enableRetinaScaling: true,
+            })
+            clipsFabricCanvasRef.current = fabricCanvas
+        }
+
+        syncClipsFabricCanvas(fabricCanvas, idFramesRef.current, {
             clips,
             zoomLevel,
-            videoLengthSec: Math.max(vl, 1e-6),
+            trackWidthPx,
             isPlaying,
             detect,
             liveVideoTimeSec: videoRef.current?.currentTime ?? currentTime,
             recordingStartSec: clipRecordingStartRef.current,
             spinnerAngleRad: (performance.now() / 400) % (Math.PI * 2),
         })
-    }, [clips, zoomLevel, videoLength, duration, isPlaying, detect, currentTime])
+    }, [
+        clips,
+        zoomLevel,
+        videoLength,
+        duration,
+        isPlaying,
+        detect,
+        currentTime,
+        timelineSpanPx,
+    ])
 
     useEffect(() => {
         paintClipsCanvasRef.current = paintClipsCanvas
@@ -1109,7 +1127,7 @@ export default function VideoEditor() {
                                     <canvas
                                         id="ruler-line"
                                         ref={rulerCanvasRef}
-                                        className="block w-full border-t border-muted-foreground/40"
+                                        className="block max-w-none border-t border-muted-foreground/40"
                                         aria-hidden
                                     />
                                 </div>
@@ -1117,7 +1135,7 @@ export default function VideoEditor() {
                                 <div className="mt-3 w-full">
                                     <div
                                         className="overflow-hidden rounded transition-discrete duration-250 ease-linear"
-                                        style={{ width: `${Math.max(videoLength, 1e-6) * PX_PER_SECOND * zoomLevel}px` }}
+                                        style={{ width: `${timelineSpanPx}px` }}
                                     >
                                         <canvas
                                             ref={clipsCanvasRef}
