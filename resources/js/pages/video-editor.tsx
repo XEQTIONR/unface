@@ -27,6 +27,24 @@ import {
 } from './video-editor/constants'
 import VideoClip from './video-editor/video-clip'
 
+/** Ruler/timeline content stays at least this far past the playhead (px). */
+const TIMELINE_RIGHT_MARGIN_PX = 64
+
+function computeTimelineContentWidthPx(opts: {
+    durationSec: number
+    currentTime: number
+    viewportCssWidth: number
+    zoomLevel: number
+}): number {
+    const pxPerSec = PX_PER_SECOND * opts.zoomLevel
+
+    return Math.max(
+        opts.durationSec * pxPerSec,
+        opts.currentTime * pxPerSec + TIMELINE_RIGHT_MARGIN_PX,
+        opts.viewportCssWidth,
+    )
+}
+
 const FACE_OVERLAY_KEY = '__unfaceFaceOverlay' as const
 
 const cyanOverlayStroke = 'rgba(0, 255, 255, 0.95)'
@@ -133,7 +151,7 @@ export default function VideoEditor() {
     const lastDetectionDimsRef = useRef({ dw: 0, dh: 0 })
     const latestFacesRef = useRef<FaceBox[]>([])
     const names = useRef(allNames)
-    const timelineRef = useRef<HTMLDivElement>(null)
+    const timelineScrollRef = useRef<HTMLDivElement>(null)
     const rulerCanvasRef = useRef<HTMLCanvasElement>(null)
     const rulerContainerRef = useRef<HTMLDivElement>(null)
     const videoRef = useRef<HTMLVideoElement>(null)
@@ -158,6 +176,7 @@ export default function VideoEditor() {
     const [videoFileUrl, setVideoFileUrl] = useState<string | undefined>(undefined)
     const [videoPanelHeight, setVideoPanelHeight] = useState(0)
     const [showWhat, setShowWhat] = useState<'video' | 'canvas'>('canvas')
+    const [timelineViewportWidth, setTimelineViewportWidth] = useState(0)
 
     useEffect(() => {
         if (videoPanelRef.current) {
@@ -428,16 +447,16 @@ export default function VideoEditor() {
     }, [])
 
     const setTimeFromClientX = useCallback((clientX: number) => {
-        const timeline = timelineRef.current
+        const timeline = timelineScrollRef.current
         const video = videoRef.current
 
         if (!timeline || !video) {
             return
         }
 
-        const rect = timeline.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const raw = x / PX_PER_SECOND;
+        const rect = timeline.getBoundingClientRect()
+        const x = clientX - rect.left + timeline.scrollLeft
+        const raw = x / (PX_PER_SECOND * zoomLevel)
         const maxTime =
             Number.isFinite(video.duration) && video.duration > 0
                 ? video.duration
@@ -450,7 +469,61 @@ export default function VideoEditor() {
         video.currentTime = t
         
         setCurrentTime(t) // really important
-    }, [duration])
+    }, [duration, zoomLevel])
+
+    const durationSecForTimeline =
+        duration > 0 ? duration : videoLength > 0 ? videoLength : 0
+    const timelineSpanPx = computeTimelineContentWidthPx({
+        durationSec: durationSecForTimeline,
+        currentTime,
+        viewportCssWidth: timelineViewportWidth,
+        zoomLevel,
+    })
+
+    useEffect(() => {
+        const el = timelineScrollRef.current
+
+        if (!el) {
+            return
+        }
+
+        const ro = new ResizeObserver(() => {
+            setTimelineViewportWidth(el.clientWidth)
+        })
+        ro.observe(el)
+        setTimelineViewportWidth(el.clientWidth)
+
+        return () => {
+            ro.disconnect()
+        }
+    }, [])
+
+    useEffect(() => {
+        const el = timelineScrollRef.current
+
+        if (!el || !isPlaying || isScrubbing) {
+            return
+        }
+
+        const pxPerSec = PX_PER_SECOND * zoomLevel
+        const playheadPx = currentTime * pxPerSec
+        const margin = TIMELINE_RIGHT_MARGIN_PX
+        const viewW = el.clientWidth
+        const maxScroll = Math.max(0, el.scrollWidth - viewW)
+        let next = el.scrollLeft
+
+        if (playheadPx < next + margin) {
+            next = Math.max(0, playheadPx - margin)
+        }
+
+        if (playheadPx > next + viewW - margin) {
+            next = Math.min(maxScroll, playheadPx - viewW + margin)
+        }
+
+        if (next !== el.scrollLeft) {
+            el.scrollLeft = next
+        }
+    }, [currentTime, zoomLevel, isPlaying, isScrubbing])
 
 
     const calculateAndSetVideoDimensions = useCallback(() => {
@@ -778,11 +851,23 @@ export default function VideoEditor() {
             return
         }
 
-        let cssWidth = container.clientWidth
+        const durationSec =
+            videoRef.current &&
+            Number.isFinite(videoRef.current.duration) &&
+            videoRef.current.duration > 0
+                ? videoRef.current.duration
+                : duration > 0
+                  ? duration
+                  : videoLength > 0
+                    ? videoLength
+                    : 0
 
-        if (videoRef.current && videoRef.current.duration > 0) {
-            cssWidth = videoRef.current.duration * PX_PER_SECOND * zoomLevel
-        }
+        const cssWidth = computeTimelineContentWidthPx({
+            durationSec,
+            currentTime,
+            viewportCssWidth: timelineViewportWidth,
+            zoomLevel,
+        })
 
         const cssHeight = 36
         const dpr = window.devicePixelRatio || 1
@@ -837,24 +922,10 @@ export default function VideoEditor() {
             ctx.fillStyle = '#888'
             ctx.fillText(formatTime(j*5), Math.floor(x) + 8, 24)
         }
-    }, [zoomLevel])
+    }, [zoomLevel, currentTime, duration, videoLength, timelineViewportWidth])
 
     useEffect(() => {
-        const container = rulerContainerRef.current
-
-        if (!container) {
-            return
-        }
-
-        const ro = new ResizeObserver(() => {
-            paintTimelineRuler()
-        })
-        ro.observe(container)
         paintTimelineRuler()
-
-        return () => {
-            ro.disconnect()
-        }
     }, [paintTimelineRuler])
 
     return (<>
@@ -914,8 +985,8 @@ export default function VideoEditor() {
             <ResizablePanel defaultSize="30%">
                 <div className="flex w-full flex-col gap-2 mt-3">
                     <div
-                        ref={timelineRef}
-                        className="relative w-full cursor-col-resize touch-none select-none pt-3"
+                        ref={timelineScrollRef}
+                        className="relative w-full cursor-col-resize touch-none select-none overflow-x-auto pt-3"
                         onPointerDown={(e) => {
                             e.preventDefault();
                             isScrubbingRef.current = true;
@@ -971,7 +1042,10 @@ export default function VideoEditor() {
                             setIsScrubbing(false);
                         }}
                     >
-                        <div className="relative min-h-44 h-full w-full overflow-visible pb-5">
+                        <div
+                            className="relative min-h-44 h-full overflow-visible pb-5"
+                            style={{ width: `${timelineSpanPx}px` }}
+                        >
                             <div
                                 id="seeker-line"
                                 className={cn(
