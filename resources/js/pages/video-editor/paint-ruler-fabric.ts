@@ -43,7 +43,7 @@ export function syncRulerFabricCanvas(
         }
 
         objs.push(
-            new Line([Math.floor(x), 2, Math.floor(x), 5], {
+            new Line([Math.floor(x), 2, Math.floor(x), 8], {
                 stroke: '#444',
                 strokeWidth: 1,
                 ...NO_INTERACTION,
@@ -59,7 +59,7 @@ export function syncRulerFabricCanvas(
         }
 
         objs.push(
-            new Line([Math.floor(x), 2, Math.floor(x), 22], {
+            new Line([Math.floor(x), 2, Math.floor(x), 25], {
                 stroke: '#444',
                 strokeWidth: 1,
                 ...NO_INTERACTION,
@@ -68,7 +68,7 @@ export function syncRulerFabricCanvas(
         objs.push(
             new FabricText(formatTime(j * 5), {
                 left: Math.floor(x) + 8,
-                top: 24,
+                top: 12,
                 fontSize: 12,
                 fontFamily: 'Arial',
                 fill: '#888',

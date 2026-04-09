@@ -7,12 +7,13 @@ import * as tf from '@tensorflow/tfjs'
 import * as faceapi from '@vladmandic/face-api'
 import type { FaceDetection } from '@vladmandic/face-api'
 import { FabricText, Rect, StaticCanvas } from 'fabric'
-import { Pause, Play, Triangle } from 'lucide-react'
+import { Maximize, MinusCircle, PanelBottomClose, Pause, Play, PlusCircle, ScanFace, Trash, Triangle } from 'lucide-react'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
 import Dropzone from '@/components/dropzone'
 import { Button } from '@/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { create } from '@/routes/videos'
 import type { FaceBox, IdentityBox, IdentityFrame } from '@/types/video'
@@ -27,6 +28,7 @@ import {
 } from './video-editor/constants'
 import { syncClipsFabricCanvas } from './video-editor/paint-clips-fabric'
 import { syncRulerFabricCanvas } from './video-editor/paint-ruler-fabric'
+import { Slider } from '@/components/ui/slider'
 
 /** Ruler/timeline content stays at least this far past the playhead (px). */
 const TIMELINE_RIGHT_MARGIN_PX = 64
@@ -999,7 +1001,7 @@ export default function VideoEditor() {
             <ResizablePanel elementRef={videoPanelRef} onResize={onResize} id="resizable-video-panel" className="w-full" defaultSize="70%">
             {
             videoFileUrl ? 
-            (    <div id="video-container" ref={videoContainerRef} className="w-full h-full bg-purple-950 overflow-hidden">
+            (    <div id="video-container" ref={videoContainerRef} className="w-full h-full bg-muted dark:bg-neutral-950 overflow-hidden">
                     <video
                         id="video"
                         ref={videoRef}
@@ -1046,10 +1048,82 @@ export default function VideoEditor() {
                 setShowWhat('canvas')
             }} withHandle />
             <ResizablePanel defaultSize="30%">
-                <div className="flex w-full flex-col gap-2 mt-3">
+                <div className="flex w-full flex-col mt-3">
+                    <div className="relative z-10 grid grid-cols-3 items-center gap-2 pt-1 pb-4">
+                        <div className='flex justify-start items-center pl-3 gap-3'>
+                            <Button size="icon" variant="ghost">
+                                <span><ScanFace strokeWidth={2.75} /></span>
+                            </Button>
+                            <Button onClick={() => {
+                                setVideoFileUrl(undefined)
+                                setMetaLoaded(false)
+                            }} size="icon" variant="ghost">
+                                <span><Trash strokeWidth={2.75} /></span>
+                            </Button>
+                        </div>
+                        <div className="flex justify-center items-center gap-1">
+                            <Button
+                                className="cursor-pointer rounded-full transition-transform duration-200 hover:scale-125"
+                                disabled={!videoFileUrl}
+                                onClick={() => {
+                                    if (videoFileUrl) {
+                                        if (isPlaying) {
+                                            videoRef.current?.pause()
+                                        } else {
+                                            videoRef.current?.play()
+                                        }
+                                    } 
+                                }}
+                                
+                                size="icon-xs"
+                            >
+                                {isPlaying ? <Pause className="fill-background" /> : <Play className="fill-background" />}
+                            </Button>
+                            <div className="text-sm font-bold flex justify-center items-center h-5 font-mono">
+                                <div className="w-12 text-center -mr-0.5">{formatTime(currentTime)}</div>
+                                <Separator className='bg-muted-foreground/50 mx-0.5 border-x border-muted-foreground/50' orientation="vertical" />
+                                <div className='w-12 text-center text-muted-foreground -ml-0.5'>{formatTime(videoLength)}</div>
+                            </div>
+                        </div>
+                        <div className='flex justify-end items-center gap-3 h-full pr-3'>
+                            <Button onClick={() => {
+                                setZoomLevel((z) => z - 0.5)
+                                setVideoFileUrl(undefined)
+                                setVideoLength(0)
+                                setCurrentTime(0)
+                                setMetaLoaded(false)
+                                setClips([])
+                                setCurrentClip(null)
+                                setTimelineViewportWidth(0)
+                                setDetect(true)
+                                idFramesRef.current = []
+                                latestFacesRef.current = []
+                                i.current = 0
+                                lastDetectionDimsRef.current = { dw: 0, dh: 0 }
+                            }} size="icon" variant="ghost">
+                                <span><MinusCircle strokeWidth={2.25} /></span>
+                            </Button>
+                            <Slider className='w-32' value={[zoomLevel]}
+                                max={10}
+                                min={1}
+                                step={0.5}
+                                onValueChange={(value) => setZoomLevel(value[0])}
+                            />
+                            <Button onClick={() => setZoomLevel((z) => z + 0.5)} size="icon" variant="ghost">
+                                <span><PlusCircle strokeWidth={2.25} /></span>
+                            </Button>
+                            <Separator orientation="vertical" />
+                            <Button size="icon" variant="ghost">
+                                <span><PanelBottomClose strokeWidth={2.25} /></span>
+                            </Button>
+                            <Button size="icon" variant="ghost">
+                                <span><Maximize strokeWidth={3} /></span>
+                            </Button>
+                        </div>
+                    </div>
                     <div
                         ref={timelineScrollRef}
-                        className="relative w-full cursor-col-resize touch-none select-none overflow-x-auto pt-3"
+                        className="relative w-full cursor-col-resize touch-none select-none overflow-x-auto"
                         onPointerDown={(e) => {
                             e.preventDefault();
                             isScrubbingRef.current = true;
@@ -1109,6 +1183,7 @@ export default function VideoEditor() {
                             className="relative min-h-44 h-full overflow-visible pb-5"
                             style={{ width: `${timelineSpanPx}px` }}
                         >
+                            
                             <div
                                 id="seeker-line"
                                 className={cn(
@@ -1146,25 +1221,6 @@ export default function VideoEditor() {
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    <div className="relative z-10 flex items-center gap-2">
-                        <Button
-                            disabled={!videoFileUrl}
-                            onClick={() => {
-                                if (videoFileUrl) {
-                                    if (isPlaying) {
-                                        videoRef.current?.pause()
-                                    } else {
-                                        videoRef.current?.play()
-                                    }
-                                } 
-                            }}
-                            variant="secondary"
-                            size="icon"
-                        >
-                            {isPlaying ? <Pause /> : <Play />}
-                        </Button>
-                        <span className="text-sm font-bold">{formatTime(currentTime)}</span>
                     </div>
                 </div>
             </ResizablePanel>
