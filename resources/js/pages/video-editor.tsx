@@ -55,7 +55,7 @@ export default function VideoEditor() {
     const [isScrubbing, setIsScrubbing] = useState(false)
     const [metaLoaded, setMetaLoaded] = useState(false)
     const [videoLength, setVideoLength] = useState(0)
-    const [zoomLevel, setZoomLevel] = useState(1)
+    const [zoomLevel, setZoomLevel] = useState(3)
     const [clips, setClips] = useState<Clip[]>([])
     const [currentClip, setCurrentClip] = useState<Clip | null>(null)
     const [videoFileUrl, setVideoFileUrl] = useState<string | undefined>(undefined)
@@ -230,12 +230,14 @@ export default function VideoEditor() {
         };
     }, [faceApiReady, isPlaying, detect])
 
-    const formatTime = (time: number) => {
+    const formatTime = (time: number, withHours: boolean = false) => {
         const hours = Math.floor(time / 3600)
         const minutes = Math.floor((time % 3600) / 60)
         const seconds = time % 60
 
-        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toFixed(0).toString().padStart(2, '0')}`
+        const sub = `${minutes.toString().padStart(2, '0')}:${seconds.toFixed(0).toString().padStart(2, '0')}`
+
+        return withHours ? `${hours.toString().padStart(2, '0')}:${sub}` : sub
     }
     
     const paintVideoToDisplayCanvas = useCallback(() => {
@@ -330,6 +332,7 @@ export default function VideoEditor() {
 
     const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>)  => {
         calculateAndSetVideoDimensions()
+        setShowWhat('canvas')
         setDuration(e.currentTarget.duration)
         setVideoLength(e.currentTarget.duration)
         setMetaLoaded(true)
@@ -597,14 +600,19 @@ export default function VideoEditor() {
             return
         }
 
-        const cssWidth = container.clientWidth
-        const cssHeight = 20
+        let cssWidth = container.clientWidth
+
+        if (videoRef.current && videoRef.current.duration > 0) {
+            cssWidth = videoRef.current.duration * PX_PER_SECOND * zoomLevel
+        }
+
+        const cssHeight = 36
         const dpr = window.devicePixelRatio || 1
 
         canvas.width = Math.max(1, Math.floor(cssWidth * dpr))
         canvas.height = Math.max(1, Math.floor(cssHeight * dpr))
         canvas.style.width = `${cssWidth}px`
-        canvas.style.height = `${cssHeight}px`
+        //canvas.style.height = `${cssHeight}px`
 
         const ctx = canvas.getContext('2d')
 
@@ -622,6 +630,8 @@ export default function VideoEditor() {
             return
         }
 
+        ctx.font = '12px Arial'
+
         for (let i = 0; ; i++) {
             const x = i * minorStep
 
@@ -633,8 +643,8 @@ export default function VideoEditor() {
                 continue
             }
 
-            ctx.fillStyle = '#666666'
-            ctx.fillRect(Math.floor(x), 0, 1, 5)
+            ctx.fillStyle = '#444'
+            ctx.fillRect(Math.floor(x), 2, 1, 3)
         }
 
         for (let j = 0; ; j++) {
@@ -644,8 +654,10 @@ export default function VideoEditor() {
                 break
             }
 
-            ctx.fillStyle = '#888888'
-            ctx.fillRect(Math.floor(x), 0, 1, 13)
+            ctx.fillStyle = '#444'
+            ctx.fillRect(Math.floor(x), 2, 1, 20)
+            ctx.fillStyle = '#888'
+            ctx.fillText(formatTime(j*5), Math.floor(x) + 8, 24)
         }
     }, [zoomLevel])
 
@@ -670,7 +682,7 @@ export default function VideoEditor() {
     return (<>
         <Head title="Video Editor" />
         <ResizablePanelGroup orientation="vertical">
-            <ResizablePanel elementRef={videoPanelRef} onResize={onResize} id="resizable-video-panel" className="w-full" defaultSize="80%">
+            <ResizablePanel elementRef={videoPanelRef} onResize={onResize} id="resizable-video-panel" className="w-full" defaultSize="70%">
             {
             videoFileUrl ? 
             (    <div id="video-container" ref={videoContainerRef} className="w-full h-full bg-purple-950 overflow-hidden">
@@ -720,8 +732,8 @@ export default function VideoEditor() {
                 paintVideoToDisplayCanvas()
                 setShowWhat('canvas')
             }} withHandle />
-            <ResizablePanel defaultSize="20%">
-                <div className="flex w-full flex-col gap-2">
+            <ResizablePanel defaultSize="30%">
+                <div className="flex w-full flex-col gap-2 mt-3">
                     <div
                         ref={timelineRef}
                         className="relative w-full cursor-col-resize touch-none select-none pt-3"
@@ -784,22 +796,22 @@ export default function VideoEditor() {
                             <div
                                 id="seeker-line"
                                 className={cn(
-                                    'pointer-events-none absolute -top-3 bottom-0 z-1 -mr-px w-px overflow-visible bg-neutral-300',
-                                    (isScrubbing ? '' : 'transition-all duration-200 ease-linear'))
+                                    'pointer-events-none absolute top-0 bottom-0 z-1 -mr-px w-px overflow-visible bg-neutral-300',
+                                    (isScrubbing ? '' : 'transition-all duration-250 ease-linear'))
                                 }
                                 style={{left: `${currentTime * PX_PER_SECOND * zoomLevel}px`}}
                             >
                                 <Triangle
                                     size={15}
-                                    className="relative -left-[7px] -top-1 rotate-180 fill-foreground stroke-0 text-foreground"
+                                    className="relative -left-[7px] -top-0.5 rotate-180 fill-foreground stroke-0 text-foreground"
                                 />
                             </div>
                             <div className="relative flex h-full w-full flex-col gap-1.5 bg-neutral-50 dark:bg-neutral-900 pb-5">
-                                <div ref={rulerContainerRef} className="h-5 w-full">
+                                <div ref={rulerContainerRef} className="w-full">
                                     <canvas
                                         id="ruler-line"
                                         ref={rulerCanvasRef}
-                                        className="block h-full max-h-5 w-full"
+                                        className="block w-full border-t border-muted-foreground/40"
                                         aria-hidden
                                     />
                                 </div>
