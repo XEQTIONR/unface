@@ -9,7 +9,6 @@ import type { FaceDetection } from '@vladmandic/face-api'
 import { Pause, Play, Triangle } from 'lucide-react'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
-import { useDebouncedCallback } from 'use-debounce'
 import Dropzone from '@/components/dropzone'
 import { Button } from '@/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
@@ -43,10 +42,10 @@ export default function VideoEditor() {
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const videoPanelRef = useRef<HTMLDivElement>(null)
 
+    const [aspectRatio, setAspectRatio] = useState<number|undefined>(undefined)
     const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
     const [currentTime, setCurrentTime] = useState(0)
     const [detect, setDetect] = useState(true)
-    const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
     const [duration, setDuration] = useState(0)
     const [faceApiReady, setFaceApiReady] = useState(false)
     const [faces, setFaces] = useState<Set<string>>(new Set([]))
@@ -59,6 +58,7 @@ export default function VideoEditor() {
     const [currentClip, setCurrentClip] = useState<Clip | null>(null)
     const [videoFileUrl, setVideoFileUrl] = useState<string | undefined>(undefined)
     const [videoPanelHeight, setVideoPanelHeight] = useState(0)
+    const [showWhat, setShowWhat] = useState<'video' | 'canvas'>('canvas')
 
     useEffect(() => {
         if (videoPanelRef.current) {
@@ -292,9 +292,10 @@ export default function VideoEditor() {
         setCurrentTime(t) // really important
     }, [duration])
 
+
     const calculateAndSetVideoDimensions = useCallback(() => {
         const video = videoRef.current as HTMLVideoElement
-
+        
         if (!video) {
             return
         }
@@ -303,19 +304,17 @@ export default function VideoEditor() {
         const w = video.videoWidth
         const ratio = w/h
 
+        if (aspectRatio !== ratio) {
+            setAspectRatio(ratio)
+        }
+
         const panel = videoPanelRef.current as HTMLDivElement
-        const panelH = (panel.offsetHeight * 0.9) || 0
 
-        const newW = panelH * ratio
+        setShowWhat('video')
+        setVideoPanelHeight(panel.offsetHeight)
+    }, [aspectRatio, videoRef])
 
-        setDimensions({ width: newW, height: panelH })
-
-        setTimeout(() => {
-            paintVideoToDisplayCanvas()
-        }, 100)
-    }, [paintVideoToDisplayCanvas, videoRef])
-
-    const onResize = useDebouncedCallback(calculateAndSetVideoDimensions, 50)
+    const onResize = calculateAndSetVideoDimensions
 
     const onVideoFileSelect = useCallback((file: File) => {
         if (videoBlobUrlRef.current) {
@@ -602,11 +601,16 @@ export default function VideoEditor() {
                         playsInline
                         preload="auto"
                         className={cn(
-                            'h-full w-full object-cover',
-                            metaLoaded
-                                ? 'pointer-events-none fixed inset-0 z-0 opacity-0'
-                                : 'relative z-0',
+                            'object-cover pointer-events-none inset-0',
+                            metaLoaded && showWhat === 'video'
+                                ? 'relative left-1/2 -translate-x-1/2'
+                                : 'fixed z-0 opacity-0',
                         )}
+                        style={{
+                            aspectRatio: aspectRatio,
+                            marginTop: videoPanelHeight * 0.05,
+                            height: videoPanelHeight * 0.9,
+                        }}
                         src={videoFileUrl}
                         onLoadedMetadata={onLoadedMetadata}
                         onCanPlay={canPlay}
@@ -622,16 +626,20 @@ export default function VideoEditor() {
                             marginLeft: '50%',
                             marginTop: videoPanelHeight * 0.05,
                             transform: 'translate(-50%, 0%)',
+                            
                         }}
                         ref={canvasRef}
-                        width={dimensions.width}
-                        height={dimensions.height}
+                        width={videoPanelHeight * 0.9 * (aspectRatio || 1)}
+                        height={videoPanelHeight * 0.9}
                     />
                 </div>
             ): <Dropzone accept="video/*" className="w-full aspect-video" onSelect={onVideoFileSelect} />
         }
             </ResizablePanel>
-            <ResizableHandle withHandle />
+            <ResizableHandle onClick={() => {
+                paintVideoToDisplayCanvas()
+                setShowWhat('canvas')
+            }} withHandle />
             <ResizablePanel defaultSize="20%">
                 <div className="flex w-full flex-col gap-2">
                     <div
