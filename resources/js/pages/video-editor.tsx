@@ -25,7 +25,7 @@ import {
     MOVEMENT_THRESHOLD, 
     names as allNames, 
 } from './video-editor/constants'
-import VideoClip from './video-editor/video-clip'
+import { paintVideoClipsTrack } from './video-editor/paint-clips-canvas'
 
 /** Ruler/timeline content stays at least this far past the playhead (px). */
 const TIMELINE_RIGHT_MARGIN_PX = 64
@@ -153,6 +153,9 @@ export default function VideoEditor() {
     const names = useRef(allNames)
     const timelineScrollRef = useRef<HTMLDivElement>(null)
     const rulerCanvasRef = useRef<HTMLCanvasElement>(null)
+    const clipsCanvasRef = useRef<HTMLCanvasElement>(null)
+    const clipRecordingStartRef = useRef(0)
+    const paintClipsCanvasRef = useRef<() => void>(() => {})
     const rulerContainerRef = useRef<HTMLDivElement>(null)
     const videoRef = useRef<HTMLVideoElement>(null)
     const videoBlobUrlRef = useRef<string | undefined>(undefined)
@@ -578,9 +581,11 @@ export default function VideoEditor() {
     const onPlay = () => {
 
         if (detect) {
+            const t0 = videoRef.current?.currentTime || 0
+            clipRecordingStartRef.current = t0
             setCurrentClip({
                 name: 'Clip ' + (clips.length + 1),
-                start: videoRef.current?.currentTime || 0,
+                start: t0,
                 status: 'initializing'
             })
         }
@@ -700,6 +705,8 @@ export default function VideoEditor() {
                         boxes: charsInFrame,
                         time: video.currentTime
                     })
+
+                    paintClipsCanvasRef.current()
     
                     const set = new Set(ns.map((n) => n.name))
                     const set2 = new Set(currentNames)
@@ -766,6 +773,10 @@ export default function VideoEditor() {
                 strokeWidth: strokeW,
                 fontSize,
             })
+
+            if (detect && !video.paused) {
+                paintClipsCanvasRef.current()
+            }
 
             requestAnimationFrame(step)
         }
@@ -928,6 +939,42 @@ export default function VideoEditor() {
         paintTimelineRuler()
     }, [paintTimelineRuler])
 
+    const paintClipsCanvas = useCallback(() => {
+        const canvas = clipsCanvasRef.current
+
+        if (!canvas) {
+            return
+        }
+
+        const vl =
+            videoLength > 0
+                ? videoLength
+                : duration > 0
+                  ? duration
+                  : videoRef.current && videoRef.current.duration > 0
+                    ? videoRef.current.duration
+                    : 0
+
+        paintVideoClipsTrack(canvas, idFramesRef.current, {
+            clips,
+            zoomLevel,
+            videoLengthSec: Math.max(vl, 1e-6),
+            isPlaying,
+            detect,
+            liveVideoTimeSec: videoRef.current?.currentTime ?? currentTime,
+            recordingStartSec: clipRecordingStartRef.current,
+            spinnerAngleRad: (performance.now() / 400) % (Math.PI * 2),
+        })
+    }, [clips, zoomLevel, videoLength, duration, isPlaying, detect, currentTime])
+
+    useEffect(() => {
+        paintClipsCanvasRef.current = paintClipsCanvas
+    }, [paintClipsCanvas])
+
+    useEffect(() => {
+        paintClipsCanvas()
+    }, [paintClipsCanvas])
+
     return (<>
         <Head title="Video Editor" />
         <ResizablePanelGroup orientation="vertical">
@@ -971,8 +1018,6 @@ export default function VideoEditor() {
                             
                         }}
                         ref={canvasRef}
-                        //width={videoPanelHeight * 0.9 * (aspectRatio || 1)}
-                        //height={videoPanelHeight * 0.9}
                     />
                 </div>
             ): <Dropzone accept="video/*" className="w-full aspect-video" onSelect={onVideoFileSelect} />
@@ -1069,24 +1114,16 @@ export default function VideoEditor() {
                                     />
                                 </div>
 
-                                <div className="flex h-full mt-3 w-full items-stretch gap-1">
-                                    <div 
-                                        className="flex items-start gap-0.25 rounded  bg-neutral-700/65 transition-discrete duration-250 ease-linear"
-                                        style={{ width: `${videoLength * PX_PER_SECOND * zoomLevel}px` }}
+                                <div className="mt-3 w-full">
+                                    <div
+                                        className="overflow-hidden rounded transition-discrete duration-250 ease-linear"
+                                        style={{ width: `${Math.max(videoLength, 1e-6) * PX_PER_SECOND * zoomLevel}px` }}
                                     >
-                                    {
-                                            clips.map((clip) => <VideoClip framesRef={idFramesRef} key={clip.name} clip={clip} zoomLevel={zoomLevel} />)
-                                            
-                                        }
-                                        {
-                                            isPlaying &&  (
-                                                <div 
-                                                    className="h-full min-h-20 bg-red-500 relative"
-                                                    style={{ width: `${((currentTime - (currentClip?.start || 0)) * PX_PER_SECOND * zoomLevel) - (PX_PER_SECOND/5)}px` }}
-                                                />
-                                            )
-                                        }
-                                        
+                                        <canvas
+                                            ref={clipsCanvasRef}
+                                            className="block max-w-none"
+                                            aria-label="Video clips timeline"
+                                        />
                                     </div>
                                 </div>
                             </div>
