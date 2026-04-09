@@ -37,6 +37,8 @@ export default function VideoEditor() {
     const latestFacesRef = useRef<FaceBox[]>([])
     const names = useRef(allNames)
     const timelineRef = useRef<HTMLDivElement>(null)
+    const rulerCanvasRef = useRef<HTMLCanvasElement>(null)
+    const rulerContainerRef = useRef<HTMLDivElement>(null)
     const videoRef = useRef<HTMLVideoElement>(null)
     const videoBlobUrlRef = useRef<string | undefined>(undefined)
     const videoContainerRef = useRef<HTMLDivElement>(null)
@@ -587,6 +589,84 @@ export default function VideoEditor() {
         i.current = 0
     }
 
+    const paintTimelineRuler = useCallback(() => {
+        const canvas = rulerCanvasRef.current
+        const container = rulerContainerRef.current
+
+        if (!canvas || !container) {
+            return
+        }
+
+        const cssWidth = container.clientWidth
+        const cssHeight = 20
+        const dpr = window.devicePixelRatio || 1
+
+        canvas.width = Math.max(1, Math.floor(cssWidth * dpr))
+        canvas.height = Math.max(1, Math.floor(cssHeight * dpr))
+        canvas.style.width = `${cssWidth}px`
+        canvas.style.height = `${cssHeight}px`
+
+        const ctx = canvas.getContext('2d')
+
+        if (!ctx) {
+            return
+        }
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.clearRect(0, 0, cssWidth, cssHeight)
+
+        const majorStep = zoomLevel * 50
+        const minorStep = zoomLevel * 10
+
+        if (minorStep <= 0 || majorStep <= 0) {
+            return
+        }
+
+        for (let i = 0; ; i++) {
+            const x = i * minorStep
+
+            if (x > cssWidth) {
+                break
+            }
+
+            if (i % 5 === 0) {
+                continue
+            }
+
+            ctx.fillStyle = '#666666'
+            ctx.fillRect(Math.floor(x), 0, 1, 5)
+        }
+
+        for (let j = 0; ; j++) {
+            const x = j * majorStep
+
+            if (x > cssWidth) {
+                break
+            }
+
+            ctx.fillStyle = '#888888'
+            ctx.fillRect(Math.floor(x), 0, 1, 13)
+        }
+    }, [zoomLevel])
+
+    useEffect(() => {
+        const container = rulerContainerRef.current
+
+        if (!container) {
+            return
+        }
+
+        const ro = new ResizeObserver(() => {
+            paintTimelineRuler()
+        })
+        ro.observe(container)
+        paintTimelineRuler()
+
+        return () => {
+            ro.disconnect()
+        }
+    }, [paintTimelineRuler])
+
     return (<>
         <Head title="Video Editor" />
         <ResizablePanelGroup orientation="vertical">
@@ -715,18 +795,14 @@ export default function VideoEditor() {
                                 />
                             </div>
                             <div className="relative flex h-full w-full flex-col gap-1.5 bg-neutral-50 dark:bg-neutral-900 pb-5">
-                                <div
-                                    className="h-5 w-full transition-all duration-250 ease-linear bg-repeat-x"
-                                    style={{
-                                        backgroundColor: 'transparent',
-                                        backgroundImage: `
-                                            linear-gradient(90deg, #888 1px, transparent 1px),
-                                            linear-gradient(90deg, #666 1px, transparent 1px)
-                                        `,
-                                        backgroundSize: `${zoomLevel * 50}px 13px, ${zoomLevel * 10}px 5px`,
-                                        backgroundPosition: '0 top',
-                                    }}
-                                />
+                                <div ref={rulerContainerRef} className="h-5 w-full">
+                                    <canvas
+                                        id="ruler-line"
+                                        ref={rulerCanvasRef}
+                                        className="block h-full max-h-5 w-full"
+                                        aria-hidden
+                                    />
+                                </div>
 
                                 <div className="flex h-full mt-3 w-full items-stretch gap-1">
                                     <div 
