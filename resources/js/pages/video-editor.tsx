@@ -7,7 +7,7 @@ import * as tf from '@tensorflow/tfjs'
 import * as faceapi from '@vladmandic/face-api'
 import type { FaceDetection } from '@vladmandic/face-api'
 import { FabricText, Rect, StaticCanvas } from 'fabric'
-import { Maximize, MinusCircle, PanelBottomClose, Pause, Play, PlusCircle, ScanFace, Trash, Triangle } from 'lucide-react'
+import { Maximize, MinusCircle, PanelBottomClose, Pause, Play, PlusCircle, ScanFace, Smile, Trash, Triangle } from 'lucide-react'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
 import Dropzone from '@/components/dropzone'
@@ -32,6 +32,17 @@ import { Slider } from '@/components/ui/slider'
 
 /** Ruler/timeline content stays at least this far past the playhead (px). */
 const TIMELINE_RIGHT_MARGIN_PX = 64
+
+function hashToInt(str: string): number {
+    let hash = 0
+
+    for (let i = 0; i < str.length; i++) {
+        hash = (hash << 5) - hash + str.charCodeAt(i);
+        hash |= 0; // Convert to 32-bit integer
+    }
+
+    return Math.abs(hash);
+}
 
 function computeTimelineContentWidthPx(opts: {
     durationSec: number
@@ -1043,13 +1054,13 @@ export default function VideoEditor() {
             ): <Dropzone accept="video/*" className="w-full aspect-video" onSelect={onVideoFileSelect} />
         }
             </ResizablePanel>
-            <ResizableHandle onClick={() => {
+            <ResizableHandle className='z-20' onClick={() => {
                 paintVideoToDisplayCanvas()
                 setShowWhat('canvas')
             }} withHandle />
             <ResizablePanel defaultSize="30%">
-                <div className="flex w-full flex-col mt-3">
-                    <div className="relative z-10 grid grid-cols-3 items-center gap-2 pt-1 pb-4">
+                <div className="flex w-full flex-col">
+                    <div className="sticky top-0 bg-background z-10 grid grid-cols-3 items-center gap-2 pt-4 pb-4">
                         <div className='flex justify-start items-center pl-3 gap-3'>
                             <Button size="icon" variant="ghost">
                                 <span><ScanFace strokeWidth={2.75} /></span>
@@ -1121,107 +1132,134 @@ export default function VideoEditor() {
                             </Button>
                         </div>
                     </div>
-                    <div
-                        ref={timelineScrollRef}
-                        className="relative w-full cursor-col-resize touch-none select-none overflow-x-auto"
-                        onPointerDown={(e) => {
-                            e.preventDefault();
-                            isScrubbingRef.current = true;
-                            setIsScrubbing(true);
-                            e.currentTarget.setPointerCapture(e.pointerId);
-                            setTimeFromClientX(e.clientX);
-                        }}
-                        onPointerMove={(e) => {
-                            if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
-                                return;
-                            }
-
-                            setTimeFromClientX(e.clientX);
-                        }}
-                        onPointerUp={(e) => {
-                            e.currentTarget.releasePointerCapture(e.pointerId);
-                            isScrubbingRef.current = false;
-                            setIsScrubbing(false);
-
-                            if (!detect) {
-                                const t = videoRef.current?.currentTime || 0
-                                let low = 0
-                                let high = idFramesRef.current.length - 1
-                                let mid = Math.floor((low + high) / 2)
-                                let found = false
-
-                                while (low <= high && !found) {
-                                    mid = Math.floor((low + high) / 2)
-                                    
-
-                                    if (idFramesRef.current[mid].time < t) {
-                                        //
-                                        low = mid + 1
-                                    } else if (idFramesRef.current[mid].time > t) {
-                                        //
-                                        high = mid - 1
-                                    } else {
-                                        found = true
-                                    }
-                                }
-
-                                if (found) {
-                                    i.current = mid;
-                                } else {
-                                    i.current = low;
-                                }
-                            
-                            }
-                        }}
-                        onPointerCancel={(e) => {
-                            e.currentTarget.releasePointerCapture(e.pointerId);
-                            isScrubbingRef.current = false;
-                            setIsScrubbing(false);
-                        }}
-                    >
+                    <div className="flex w-full h-full border-t">
+                        {
+                            faces.size > 0 && (
+                                <div className="h-full">
+                                    <div className="w-full mt-20 flex flex-col gap-2 pt-0.25 px-4">
+                                        {
+                                            [...faces].map((face) => (
+                                                <div className="text-xs flex items-center overflow-x-clip gap-1" key={face}>
+                                                    <Button size="icon-sm" variant="ghost">
+                                                    {/* <span className="material-symbols-outlined text-muted-foreground">
+                                                        {
+                                                            ['face', 'face_2', 'face_3', 'face_4', 'face_5', 'face_6'][hashToInt(face) % 6]
+                                                        }
+                                                    </span> */}
+                                                    <img className='size-6' src={`https://api.dicebear.com/9.x/big-smile/svg?seed=${face}`} />
+                                                    </Button>
+                                                    {/* <div className='text-xs font-bold'>{face}</div> */}
+                                                </div>
+                                            ))
+                                        }
+                                    </div>
+                                </div>
+                            )
+                        }
                         <div
-                            className="relative min-h-44 h-full overflow-visible pb-5"
-                            style={{ width: `${timelineSpanPx}px` }}
-                        >
-                            
-                            <div
-                                id="seeker-line"
-                                className={cn(
-                                    'pointer-events-none absolute top-0 bottom-0 z-1 -mr-px w-px overflow-visible bg-neutral-300',
-                                    (isScrubbing ? '' : 'transition-all duration-250 ease-linear'))
+                            ref={timelineScrollRef}
+                            className="relative w-full cursor-col-resize touch-none select-none overflow-x-auto"
+                            onPointerDown={(e) => {
+                                e.preventDefault();
+                                isScrubbingRef.current = true;
+                                setIsScrubbing(true);
+                                e.currentTarget.setPointerCapture(e.pointerId);
+                                setTimeFromClientX(e.clientX);
+                            }}
+                            onPointerMove={(e) => {
+                                if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
+                                    return;
                                 }
-                                style={{left: `${currentTime * PX_PER_SECOND * zoomLevel}px`}}
+
+                                setTimeFromClientX(e.clientX);
+                            }}
+                            onPointerUp={(e) => {
+                                e.currentTarget.releasePointerCapture(e.pointerId);
+                                isScrubbingRef.current = false;
+                                setIsScrubbing(false);
+
+                                if (!detect) {
+                                    const t = videoRef.current?.currentTime || 0
+                                    let low = 0
+                                    let high = idFramesRef.current.length - 1
+                                    let mid = Math.floor((low + high) / 2)
+                                    let found = false
+
+                                    while (low <= high && !found) {
+                                        mid = Math.floor((low + high) / 2)
+                                        
+
+                                        if (idFramesRef.current[mid].time < t) {
+                                            //
+                                            low = mid + 1
+                                        } else if (idFramesRef.current[mid].time > t) {
+                                            //
+                                            high = mid - 1
+                                        } else {
+                                            found = true
+                                        }
+                                    }
+
+                                    if (found) {
+                                        i.current = mid;
+                                    } else {
+                                        i.current = low;
+                                    }
+                                
+                                }
+                            }}
+                            onPointerCancel={(e) => {
+                                e.currentTarget.releasePointerCapture(e.pointerId);
+                                isScrubbingRef.current = false;
+                                setIsScrubbing(false);
+                            }}
+                        >
+                            <div
+                                className="relative h-full overflow-x-visible pb-5"
+                                style={{ width: `${timelineSpanPx}px` }}
                             >
-                                <Triangle
-                                    size={15}
-                                    className="relative -left-[7px] -top-0.5 rotate-180 fill-foreground stroke-0 text-foreground"
-                                />
-                            </div>
-                            <div className="relative flex h-full w-full flex-col gap-1.5 bg-neutral-50 dark:bg-neutral-900 pb-5">
-                                <div ref={rulerContainerRef} className="w-full">
-                                    <canvas
-                                        id="ruler-line"
-                                        ref={rulerCanvasRef}
-                                        className="block max-w-none border-t border-muted-foreground/40"
-                                        aria-hidden
+                                
+                                <div
+                                    id="seeker-line"
+                                    className={cn(
+                                        'pointer-events-none absolute top-0 bottom-0 z-1 -mr-px w-px overflow-visible bg-neutral-300',
+                                        (isScrubbing ? '' : 'transition-all duration-250 ease-linear'))
+                                    }
+                                    style={{left: `${currentTime * PX_PER_SECOND * zoomLevel}px`}}
+                                >
+                                    <Triangle
+                                        size={15}
+                                        className="relative -left-[7px] -top-0.5 rotate-180 fill-foreground stroke-0 text-foreground"
                                     />
                                 </div>
 
-                                <div className="mt-3 w-full">
-                                    <div
-                                        className="overflow-hidden rounded transition-discrete duration-250 ease-linear"
-                                        style={{ width: `${timelineSpanPx}px` }}
-                                    >
+                                <div className="flex h-full w-full flex-col gap-1.5 bg-neutral-50 dark:bg-red-900 pb-5 z-100">
+                                    <div ref={rulerContainerRef} className="w-full">
                                         <canvas
-                                            ref={clipsCanvasRef}
-                                            className="block max-w-none"
-                                            aria-label="Video clips timeline"
+                                            id="ruler-line"
+                                            ref={rulerCanvasRef}
+                                            className="block max-w-none border-t border-muted-foreground/40"
+                                            aria-hidden
                                         />
+                                    </div>
+
+                                    <div className="mt-3 w-full">
+                                        <div
+                                            className="overflow-hidden rounded transition-discrete duration-250 ease-linear"
+                                            style={{ width: `${timelineSpanPx}px` }}
+                                        >
+                                            <canvas
+                                                ref={clipsCanvasRef}
+                                                className="block max-w-none"
+                                                aria-label="Video clips timeline"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
+                    
                 </div>
             </ResizablePanel>
         </ResizablePanelGroup>
