@@ -23,11 +23,15 @@ const TOP_LEFT = {
 };
 
 const CLIP_GAP_PX = 2;
-const CHAR_ROW_H = 40;
+/** Character / identity row height in the clips timeline (matches HTML face gutter rows). */
+export const CLIP_CHAR_ROW_HEIGHT_PX = 40;
+const CHAR_ROW_H = CLIP_CHAR_ROW_HEIGHT_PX;
 const TITLE_TOP = 6;
 const TITLE_SIZE = 11;
 const SPINNER_AREA_H = 44;
 const SECTION_GAP = 8;
+/** Y offset from top of clips canvas to first character row (matches HTML face gutter). */
+export const CLIP_FIRST_CHAR_ROW_TOP_PX = TITLE_TOP + TITLE_SIZE + SECTION_GAP;
 const RECORDING_TRIM_PX = PX_PER_SECOND / 5;
 const MIN_TRACK_H = 80;
 const CORNER_R = 4;

@@ -7,13 +7,14 @@ import * as tf from '@tensorflow/tfjs'
 import * as faceapi from '@vladmandic/face-api'
 import type { FaceDetection } from '@vladmandic/face-api'
 import { FabricText, Rect, StaticCanvas } from 'fabric'
-import { Maximize, MinusCircle, PanelBottomClose, Pause, Play, PlusCircle, ScanFace, Smile, Trash, Triangle } from 'lucide-react'
+import { Maximize, MinusCircle, PanelBottomClose, Pause, Play, PlusCircle, ScanFace, Trash, Triangle } from 'lucide-react'
 import { useCallback, useRef, useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
 import Dropzone from '@/components/dropzone'
 import { Button } from '@/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Separator } from '@/components/ui/separator'
+import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 import { create } from '@/routes/videos'
 import type { FaceBox, IdentityBox, IdentityFrame } from '@/types/video'
@@ -26,23 +27,18 @@ import {
     MOVEMENT_THRESHOLD, 
     names as allNames, 
 } from './video-editor/constants'
-import { syncClipsFabricCanvas } from './video-editor/paint-clips-fabric'
+import {
+    CLIP_CHAR_ROW_HEIGHT_PX,
+    CLIP_FIRST_CHAR_ROW_TOP_PX,
+    syncClipsFabricCanvas,
+} from './video-editor/paint-clips-fabric'
 import { syncRulerFabricCanvas } from './video-editor/paint-ruler-fabric'
-import { Slider } from '@/components/ui/slider'
 
 /** Ruler/timeline content stays at least this far past the playhead (px). */
 const TIMELINE_RIGHT_MARGIN_PX = 64
 
-function hashToInt(str: string): number {
-    let hash = 0
-
-    for (let i = 0; i < str.length; i++) {
-        hash = (hash << 5) - hash + str.charCodeAt(i);
-        hash |= 0; // Convert to 32-bit integer
-    }
-
-    return Math.abs(hash);
-}
+/** Left column for face avatars; matches `CLIP_CHAR_ROW_HEIGHT_PX` so rows line up with Fabric tracks. */
+const TIMELINE_FACE_GUTTER_PX = CLIP_CHAR_ROW_HEIGHT_PX
 
 function computeTimelineContentWidthPx(opts: {
     durationSec: number
@@ -479,7 +475,8 @@ export default function VideoEditor() {
         }
 
         const rect = timeline.getBoundingClientRect()
-        const x = clientX - rect.left + timeline.scrollLeft
+        const gutter = faces.size > 0 ? TIMELINE_FACE_GUTTER_PX : 0
+        const x = clientX - rect.left + timeline.scrollLeft - gutter
         const raw = x / (PX_PER_SECOND * zoomLevel)
         const maxTime =
             Number.isFinite(video.duration) && video.duration > 0
@@ -493,7 +490,7 @@ export default function VideoEditor() {
         video.currentTime = t
         
         setCurrentTime(t) // really important
-    }, [duration, zoomLevel])
+    }, [duration, zoomLevel, faces.size])
 
     const durationSecForTimeline =
         duration > 0 ? duration : videoLength > 0 ? videoLength : 0
@@ -503,6 +500,8 @@ export default function VideoEditor() {
         viewportCssWidth: timelineViewportWidth,
         zoomLevel,
     })
+    const timelineGutterPx = faces.size > 0 ? TIMELINE_FACE_GUTTER_PX : 0
+    const timelineContentWidthPx = timelineGutterPx + timelineSpanPx
 
     useEffect(() => {
         const el = timelineScrollRef.current
@@ -530,7 +529,8 @@ export default function VideoEditor() {
         }
 
         const pxPerSec = PX_PER_SECOND * zoomLevel
-        const playheadPx = currentTime * pxPerSec
+        const gutter = faces.size > 0 ? TIMELINE_FACE_GUTTER_PX : 0
+        const playheadPx = gutter + currentTime * pxPerSec
         const margin = TIMELINE_RIGHT_MARGIN_PX
         const viewW = el.clientWidth
         const maxScroll = Math.max(0, el.scrollWidth - viewW)
@@ -547,7 +547,7 @@ export default function VideoEditor() {
         if (next !== el.scrollLeft) {
             el.scrollLeft = next
         }
-    }, [currentTime, zoomLevel, isPlaying, isScrubbing])
+    }, [currentTime, zoomLevel, isPlaying, isScrubbing, faces.size])
 
 
     const calculateAndSetVideoDimensions = useCallback(() => {
@@ -1153,12 +1153,9 @@ export default function VideoEditor() {
                         }
                         <div
                             ref={timelineScrollRef}
-                            onScroll={(e) => {
-                                console.log('timeline scroll')
-
-                                // if (facesScrollRef.current) {
-                                //     facesScrollRef.current.scrollTop = e.currentTarget.scrollTop
-                                // }
+                            onScroll={() => {
+                                // Sync vertical scroll with faces column when needed:
+                                // facesScrollRef.current && (facesScrollRef.current.scrollTop = ...)
                             }}
                             className=" w-full cursor-col-resize touch-none select-none overflow-x-auto"
                             onPointerDown={(e) => {
@@ -1217,61 +1214,84 @@ export default function VideoEditor() {
                             }}
                         >
                             <div
-                                className="h-full overflow-x-visible bg-blue-900"
-                                style={{ width: `${timelineSpanPx}px` }}
+                                className="relative h-full min-w-0 overflow-x-visible bg-background"
+                                style={{ width: `${timelineContentWidthPx}px` }}
                             >
-                                <div ref={rulerContainerRef} className="w-full sticky top-0">
-                                    <canvas
-                                        id="ruler-line"
-                                        ref={rulerCanvasRef}
-                                        className="block max-w-none border-t border-muted-foreground/40 bg-background"
-                                        aria-hidden
-                                    />
+                                <div className="sticky top-0 z-10 flex w-full bg-background">
+                                    {timelineGutterPx > 0 ? (
+                                        <div
+                                            className="shrink-0 border-r border-muted-foreground/40 bg-background"
+                                            style={{ width: timelineGutterPx }}
+                                            aria-hidden
+                                        />
+                                    ) : null}
+                                    <div
+                                        ref={rulerContainerRef}
+                                        className="min-w-0"
+                                        style={{ width: timelineSpanPx }}
+                                    >
+                                        <canvas
+                                            id="ruler-line"
+                                            ref={rulerCanvasRef}
+                                            className="block max-w-none border-t border-muted-foreground/40 bg-background"
+                                            aria-hidden
+                                        />
+                                    </div>
                                 </div>
-                                
+
                                 <div
                                     id="seeker-line"
                                     className={cn(
-                                        'pointer-events-none absolute top-0 bottom-0 z-1 -mr-px w-px overflow-visible bg-neutral-300',
-                                        (isScrubbing ? '' : 'transition-all duration-250 ease-linear'))
-                                    }
-                                    style={{left: `${currentTime * PX_PER_SECOND * zoomLevel}px`}}
+                                        'pointer-events-none absolute top-0 bottom-0 z-100 -mr-px w-px overflow-visible bg-neutral-300 dark:bg-neutral-600',
+                                        isScrubbing ? '' : 'transition-all duration-250 ease-linear',
+                                    )}
+                                    style={{
+                                        left: `${timelineGutterPx + currentTime * PX_PER_SECOND * zoomLevel}px`,
+                                    }}
                                 >
                                     <Triangle
                                         size={15}
                                         className="relative -left-[7px] -top-0.5 rotate-180 fill-foreground stroke-0 text-foreground"
                                     />
                                 </div>
-                                
-                                <div className="flex w-full flex-col gap-1.5 bg-neutral-50 dark:bg-red-900 z-100">
-                                    <div className="w-full flex">
-                                        <div className="w-full flex flex-col gap-2 px-4 pb-4 mb-10">
-                                            {
-                                                [...faces].map((face) => (
-                                                    <div className="text-xs flex items-center overflow-x-clip gap-1" key={face}>
-                                                        <Button size="icon-xs" >
-                                                        {/* <span className="material-symbols-outlined text-muted-foreground">
-                                                            {
-                                                                ['face', 'face_2', 'face_3', 'face_4', 'face_5', 'face_6'][hashToInt(face) % 6]
-                                                            }
-                                                        </span> */}
-                                                        <img className='size-6' src={`https://api.dicebear.com/9.x/big-smile/svg?seed=${face}`} />
-                                                        </Button>
-                                                        {/* <div className='text-xs font-bold'>{face}</div> */}
-                                                    </div>
-                                                ))
-                                            }
-                                        </div>
-                                        <div
-                                            className="rounded transition-discrete duration-250 ease-linear"
-                                            style={{ width: `${timelineSpanPx}px` }}
-                                        >
-                                            <canvas
-                                                ref={clipsCanvasRef}
-                                                className="block max-w-none"
-                                                aria-label="Video clips timeline"
-                                            />
-                                        </div>
+
+                                <div className="flex w-full min-w-0 bg-muted/30">
+                                    <div
+                                        ref={facesScrollRef}
+                                        className={cn(
+                                            'shrink-0 border-r border-muted-foreground/40 bg-background',
+                                            timelineGutterPx === 0 && 'hidden',
+                                        )}
+                                        style={{
+                                            width: timelineGutterPx,
+                                            paddingTop: CLIP_FIRST_CHAR_ROW_TOP_PX,
+                                        }}
+                                    >
+                                        {[...faces].map((face) => (
+                                            <div
+                                                className="flex shrink-0 items-center justify-center"
+                                                style={{ height: CLIP_CHAR_ROW_HEIGHT_PX }}
+                                                key={face}
+                                            >
+                                                <Button size="icon-xs" variant="ghost" type="button">
+                                                    <img
+                                                        className="size-6"
+                                                        alt=""
+                                                        src={`https://api.dicebear.com/9.x/big-smile/svg?seed=${face}`}
+                                                    />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div
+                                        className="min-w-0 shrink-0"
+                                        style={{ width: timelineSpanPx }}
+                                    >
+                                        <canvas
+                                            ref={clipsCanvasRef}
+                                            className="block max-w-none"
+                                            aria-label="Video clips timeline"
+                                        />
                                     </div>
                                 </div>
                             </div>
