@@ -177,6 +177,7 @@ export default function VideoEditor() {
     const videoBlobUrlRef = useRef<string | undefined>(undefined)
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const videoPanelRef = useRef<HTMLDivElement>(null)
+    const facesScrollRef = useRef<HTMLDivElement>(null)
 
     const [aspectRatio, setAspectRatio] = useState<number|undefined>(undefined)
     const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
@@ -1059,7 +1060,7 @@ export default function VideoEditor() {
                 setShowWhat('canvas')
             }} withHandle />
             <ResizablePanel defaultSize="30%">
-                <div className="flex w-full flex-col">
+                <div  className="flex w-full h-full overflow-y-clip flex-col">
                     <div className="sticky top-0 bg-background z-10 grid grid-cols-3 items-center gap-2 pt-4 pb-4">
                         <div className='flex justify-start items-center pl-3 gap-3'>
                             <Button size="icon" variant="ghost">
@@ -1099,18 +1100,6 @@ export default function VideoEditor() {
                         <div className='flex justify-end items-center gap-3 h-full pr-3'>
                             <Button onClick={() => {
                                 setZoomLevel((z) => z - 0.5)
-                                setVideoFileUrl(undefined)
-                                setVideoLength(0)
-                                setCurrentTime(0)
-                                setMetaLoaded(false)
-                                setClips([])
-                                setCurrentClip(null)
-                                setTimelineViewportWidth(0)
-                                setDetect(true)
-                                idFramesRef.current = []
-                                latestFacesRef.current = []
-                                i.current = 0
-                                lastDetectionDimsRef.current = { dw: 0, dh: 0 }
                             }} size="icon" variant="ghost">
                                 <span><MinusCircle strokeWidth={2.25} /></span>
                             </Button>
@@ -1132,33 +1121,46 @@ export default function VideoEditor() {
                             </Button>
                         </div>
                     </div>
-                    <div className="flex w-full h-full border-t">
+                    <div  className="flex w-full h-full border-t relative">
                         {
-                            faces.size > 0 && (
-                                <div className="h-full">
-                                    <div className="w-full mt-20 flex flex-col gap-2 pt-0.25 px-4">
-                                        {
-                                            [...faces].map((face) => (
-                                                <div className="text-xs flex items-center overflow-x-clip gap-1" key={face}>
-                                                    <Button size="icon-sm" variant="ghost">
-                                                    {/* <span className="material-symbols-outlined text-muted-foreground">
-                                                        {
-                                                            ['face', 'face_2', 'face_3', 'face_4', 'face_5', 'face_6'][hashToInt(face) % 6]
-                                                        }
-                                                    </span> */}
-                                                    <img className='size-6' src={`https://api.dicebear.com/9.x/big-smile/svg?seed=${face}`} />
-                                                    </Button>
-                                                    {/* <div className='text-xs font-bold'>{face}</div> */}
-                                                </div>
-                                            ))
-                                        }
-                                    </div>
-                                </div>
-                            )
+                            // faces.size > 0 && (
+                            //     <div ref={facesScrollRef} onScroll={(e) => {
+                            //         console.log('charscroll')
+
+                            //         // if (timelineScrollRef.current) {
+                            //         //     timelineScrollRef.current.scrollTop = e.currentTarget.scrollTop
+                            //         // }
+                            //     }} className="h-full overflow-y-scroll">
+                            //         <div className="w-full flex flex-col gap-2 pt-17 px-4 pb-4 mb-10 bg-teal-950">
+                            //             {
+                            //                 [...faces].map((face) => (
+                            //                     <div className="text-xs flex items-center overflow-x-clip gap-1" key={face}>
+                            //                         <Button size="icon-sm" variant="ghost">
+                            //                         {/* <span className="material-symbols-outlined text-muted-foreground">
+                            //                             {
+                            //                                 ['face', 'face_2', 'face_3', 'face_4', 'face_5', 'face_6'][hashToInt(face) % 6]
+                            //                             }
+                            //                         </span> */}
+                            //                         <img className='size-6' src={`https://api.dicebear.com/9.x/big-smile/svg?seed=${face}`} />
+                            //                         </Button>
+                            //                         {/* <div className='text-xs font-bold'>{face}</div> */}
+                            //                     </div>
+                            //                 ))
+                            //             }
+                            //         </div>
+                            //     </div>
+                            // )
                         }
                         <div
                             ref={timelineScrollRef}
-                            className="relative w-full cursor-col-resize touch-none select-none overflow-x-auto"
+                            onScroll={(e) => {
+                                console.log('timeline scroll')
+
+                                // if (facesScrollRef.current) {
+                                //     facesScrollRef.current.scrollTop = e.currentTarget.scrollTop
+                                // }
+                            }}
+                            className=" w-full cursor-col-resize touch-none select-none overflow-x-auto"
                             onPointerDown={(e) => {
                                 e.preventDefault();
                                 isScrubbingRef.current = true;
@@ -1215,9 +1217,17 @@ export default function VideoEditor() {
                             }}
                         >
                             <div
-                                className="relative h-full overflow-x-visible pb-5"
+                                className="h-full overflow-x-visible bg-blue-900"
                                 style={{ width: `${timelineSpanPx}px` }}
                             >
+                                <div ref={rulerContainerRef} className="w-full sticky top-0">
+                                    <canvas
+                                        id="ruler-line"
+                                        ref={rulerCanvasRef}
+                                        className="block max-w-none border-t border-muted-foreground/40 bg-background"
+                                        aria-hidden
+                                    />
+                                </div>
                                 
                                 <div
                                     id="seeker-line"
@@ -1232,20 +1242,28 @@ export default function VideoEditor() {
                                         className="relative -left-[7px] -top-0.5 rotate-180 fill-foreground stroke-0 text-foreground"
                                     />
                                 </div>
-
-                                <div className="flex h-full w-full flex-col gap-1.5 bg-neutral-50 dark:bg-red-900 pb-5 z-100">
-                                    <div ref={rulerContainerRef} className="w-full">
-                                        <canvas
-                                            id="ruler-line"
-                                            ref={rulerCanvasRef}
-                                            className="block max-w-none border-t border-muted-foreground/40"
-                                            aria-hidden
-                                        />
-                                    </div>
-
-                                    <div className="mt-3 w-full">
+                                
+                                <div className="flex w-full flex-col gap-1.5 bg-neutral-50 dark:bg-red-900 z-100">
+                                    <div className="w-full flex">
+                                        <div className="w-full flex flex-col gap-2 px-4 pb-4 mb-10">
+                                            {
+                                                [...faces].map((face) => (
+                                                    <div className="text-xs flex items-center overflow-x-clip gap-1" key={face}>
+                                                        <Button size="icon-xs" >
+                                                        {/* <span className="material-symbols-outlined text-muted-foreground">
+                                                            {
+                                                                ['face', 'face_2', 'face_3', 'face_4', 'face_5', 'face_6'][hashToInt(face) % 6]
+                                                            }
+                                                        </span> */}
+                                                        <img className='size-6' src={`https://api.dicebear.com/9.x/big-smile/svg?seed=${face}`} />
+                                                        </Button>
+                                                        {/* <div className='text-xs font-bold'>{face}</div> */}
+                                                    </div>
+                                                ))
+                                            }
+                                        </div>
                                         <div
-                                            className="overflow-hidden rounded transition-discrete duration-250 ease-linear"
+                                            className="rounded transition-discrete duration-250 ease-linear"
                                             style={{ width: `${timelineSpanPx}px` }}
                                         >
                                             <canvas
