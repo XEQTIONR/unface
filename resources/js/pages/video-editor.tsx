@@ -1084,9 +1084,9 @@ export default function VideoEditor() {
                 paintVideoToDisplayCanvas()
                 setShowWhat('canvas')
             }} withHandle />
-            <ResizablePanel defaultSize="30%">
-                <div  className="flex w-full h-full overflow-y-clip flex-col">
-                    <div className="sticky top-0 bg-background z-10 grid grid-cols-3 items-center gap-2 pt-4 pb-4">
+            <ResizablePanel defaultSize="30%" className="flex min-h-0 flex-col">
+                <div className="flex h-full min-h-0 w-full flex-col">
+                    <div className="grid shrink-0 grid-cols-3 items-center gap-2 bg-background pt-4 pb-4">
                         <div className='flex justify-start items-center pl-3 gap-3'>
                             <Button size="icon" variant="ghost">
                                 <span><ScanFace strokeWidth={2.75} /></span>
@@ -1146,7 +1146,7 @@ export default function VideoEditor() {
                             </Button>
                         </div>
                     </div>
-                    <div  className="flex w-full h-full border-t relative">
+                    <div className="relative flex min-h-0 flex-1 flex-col border-t">
                         {
                             // faces.size > 0 && (
                             //     <div ref={facesScrollRef} onScroll={(e) => {
@@ -1182,7 +1182,7 @@ export default function VideoEditor() {
                                 // Sync vertical scroll with faces column when needed:
                                 // facesScrollRef.current && (facesScrollRef.current.scrollTop = ...)
                             }}
-                            className=" w-full cursor-col-resize touch-none select-none overflow-x-auto"
+                            className="min-h-0 w-full flex-1 cursor-col-resize touch-none select-none overflow-x-auto overflow-y-auto"
                             onPointerDown={(e) => {
                                 e.preventDefault();
                                 isScrubbingRef.current = true;
@@ -1240,7 +1240,7 @@ export default function VideoEditor() {
                         >
                             <div
                                 ref={timelineInnerRef}
-                                className="relative h-full min-w-0 overflow-x-visible bg-background"
+                                className="relative min-h-0 min-w-0 overflow-x-visible bg-background"
                                 style={{ width: `${timelineContentWidthPx}px` }}
                             >
                                 <div className="sticky top-0 z-20 h-0 w-full overflow-visible pointer-events-none">
