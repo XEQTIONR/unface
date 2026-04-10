@@ -8,7 +8,7 @@ import * as faceapi from '@vladmandic/face-api'
 import type { FaceDetection } from '@vladmandic/face-api'
 import { FabricText, Rect, StaticCanvas } from 'fabric'
 import { Maximize, MinusCircle, PanelBottomClose, Pause, Play, PlusCircle, ScanFace, Trash, Triangle } from 'lucide-react'
-import { useCallback, useRef, useState, useEffect } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import Dropzone from '@/components/dropzone'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,9 @@ import { syncRulerFabricCanvas } from './video-editor/paint-ruler-fabric'
 
 /** Ruler/timeline content stays at least this far past the playhead (px). */
 const TIMELINE_RIGHT_MARGIN_PX = 64
+
+/** Ruler canvas height; must match `paintTimelineRuler` / clips row start. */
+const TIMELINE_RULER_HEIGHT_PX = 36
 
 /** Left column for face avatars; matches `CLIP_CHAR_ROW_HEIGHT_PX` so rows line up with Fabric tracks. */
 const TIMELINE_FACE_GUTTER_PX = CLIP_CHAR_ROW_HEIGHT_PX
@@ -174,6 +177,7 @@ export default function VideoEditor() {
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const videoPanelRef = useRef<HTMLDivElement>(null)
     const facesScrollRef = useRef<HTMLDivElement>(null)
+    const timelineInnerRef = useRef<HTMLDivElement>(null)
 
     const [aspectRatio, setAspectRatio] = useState<number|undefined>(undefined)
     const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
@@ -193,6 +197,27 @@ export default function VideoEditor() {
     const [videoPanelHeight, setVideoPanelHeight] = useState(0)
     const [showWhat, setShowWhat] = useState<'video' | 'canvas'>('canvas')
     const [timelineViewportWidth, setTimelineViewportWidth] = useState(0)
+    const [timelineInnerHeightPx, setTimelineInnerHeightPx] = useState(0)
+
+    useLayoutEffect(() => {
+        const el = timelineInnerRef.current
+
+        if (!el) {
+            return
+        }
+
+        const update = () => {
+            setTimelineInnerHeightPx(el.getBoundingClientRect().height)
+        }
+
+        update()
+        const ro = new ResizeObserver(update)
+        ro.observe(el)
+
+        return () => {
+            ro.disconnect()
+        }
+    }, [])
 
     useEffect(() => {
         if (videoPanelRef.current) {
@@ -905,7 +930,7 @@ export default function VideoEditor() {
             zoomLevel,
         })
 
-        const cssHeight = 36
+        const cssHeight = TIMELINE_RULER_HEIGHT_PX
 
         let fabricCanvas = rulerFabricCanvasRef.current
 
@@ -1214,9 +1239,41 @@ export default function VideoEditor() {
                             }}
                         >
                             <div
+                                ref={timelineInnerRef}
                                 className="relative h-full min-w-0 overflow-x-visible bg-background"
                                 style={{ width: `${timelineContentWidthPx}px` }}
                             >
+                                <div className="sticky top-0 z-20 h-0 w-full overflow-visible pointer-events-none">
+                                    <div
+                                        id="seeker-line"
+                                        className="pointer-events-none absolute -mr-px overflow-visible"
+                                        style={{
+                                            left: `${timelineGutterPx + currentTime * PX_PER_SECOND * zoomLevel}px`,
+                                            top: 0,
+                                            width: 1,
+                                            height: Math.max(timelineInnerHeightPx, 1),
+                                        }}
+                                    >
+                                        <Triangle
+                                            size={15}
+                                            className="pointer-events-none absolute -left-[7px] top-0 rotate-180 fill-foreground stroke-0 text-foreground"
+                                        />
+                                        <div
+                                            className={cn(
+                                                'pointer-events-none absolute left-0 w-px bg-neutral-300 dark:bg-neutral-600',
+                                                isScrubbing ? '' : 'transition-all duration-250 ease-linear',
+                                            )}
+                                            style={{
+                                                top: TIMELINE_RULER_HEIGHT_PX,
+                                                height: Math.max(
+                                                    timelineInnerHeightPx - TIMELINE_RULER_HEIGHT_PX,
+                                                    1,
+                                                ),
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+
                                 <div className="sticky top-0 z-10 flex w-full bg-background">
                                     {timelineGutterPx > 0 ? (
                                         <div
@@ -1237,22 +1294,6 @@ export default function VideoEditor() {
                                             aria-hidden
                                         />
                                     </div>
-                                </div>
-
-                                <div
-                                    id="seeker-line"
-                                    className={cn(
-                                        'pointer-events-none absolute top-0 bottom-0 z-100 -mr-px w-px overflow-visible bg-neutral-300 dark:bg-neutral-600',
-                                        isScrubbing ? '' : 'transition-all duration-250 ease-linear',
-                                    )}
-                                    style={{
-                                        left: `${timelineGutterPx + currentTime * PX_PER_SECOND * zoomLevel}px`,
-                                    }}
-                                >
-                                    <Triangle
-                                        size={15}
-                                        className="relative -left-[7px] -top-0.5 rotate-180 fill-foreground stroke-0 text-foreground"
-                                    />
                                 </div>
 
                                 <div className="flex w-full min-w-0 bg-muted/30">
