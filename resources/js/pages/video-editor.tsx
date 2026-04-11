@@ -1211,37 +1211,37 @@ export default function VideoEditor() {
                                 className="relative min-h-0 min-w-0 overflow-x-visible bg-background"
                                 style={{ width: `${timelineContentWidthPx}px` }}
                             >
-                                <div className="sticky top-0 z-20 h-0 w-full overflow-visible pointer-events-none">
+                                <div className="sticky top-0 z-40 h-0 w-full overflow-visible pointer-events-none">
                                     <div
                                         id="seeker-line"
                                         className={cn(
-                                            'pointer-events-none absolute -mr-px w-px overflow-visible bg-neutral-300 dark:bg-neutral-600',
-                                            isScrubbing ? '' : 'transition-all duration-250 ease-linear',
+                                            'pointer-events-none absolute -mr-px w-px overflow-visible bg-foreground',
+                                            isScrubbing ? '' : 'transition-all duration-250 ease-linear z-100',
                                         )}
                                         style={{
-                                            left: `${timelineGutterPx + currentTime * PX_PER_SECOND * zoomLevel}px`,
+                                            left: `${(timelineGutterPx + currentTime * PX_PER_SECOND * zoomLevel) + ((detect && isPlaying) ? 10 : -3)}px`, // -3 when playing back  // + 10 when scrubbing
                                             top: 0,
                                             height: Math.max(timelineInnerHeightPx, 1),
                                         }}
                                     >
                                         <Triangle
                                             size={15}
-                                            className="pointer-events-none absolute -left-[7px] top-0 z-10 rotate-180 fill-foreground stroke-0 text-foreground"
+                                            className="pointer-events-none absolute -left-[7px] top-0 rotate-180 fill-foreground stroke-0 text-foreground"
                                         />
                                     </div>
                                 </div>
 
-                                <div className="sticky top-0 z-10 flex w-full bg-background">
-                                    
-                                        <div
-                                            className="border-r border-muted-foreground/40 bg-background transition-discrete duration-200"
-                                            style={{ width: timelineGutterPx }}
-                                            aria-hidden
-                                        />
+                                <div className="sticky top-0 z-30 flex w-full">
+                                    <div
+                                        className="transition-discrete duration-200 sticky z-200 left-0 bg-background"
+                                        style={{ width: timelineGutterPx-5 }}
+                                        aria-hidden
+                                    >
+                                    </div>
                                     
                                     <div
                                         ref={rulerContainerRef}
-                                        className="min-w-0"
+                                        className="min-w-0 z-100"
                                         style={{ width: timelineSpanPx }}
                                     >
                                         <canvas
@@ -1257,7 +1257,7 @@ export default function VideoEditor() {
                                     <div
                                         ref={facesScrollRef}
                                         className={cn(
-                                            'border-r border-muted-foreground/40 bg-background transition-all duration-200 overflow-clip',
+                                            'border-r border-muted-foreground/40 bg-background transition-all duration-200 overflow-clip sticky left-0 z-100',
                                             // timelineGutterPx === 0 && 'hidden',
                                         )}
                                         style={{
