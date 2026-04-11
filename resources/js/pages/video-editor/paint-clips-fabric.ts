@@ -24,7 +24,7 @@ const TOP_LEFT = {
 
 const CLIP_GAP_PX = 2;
 /** Character / identity row height in the clips timeline (matches HTML face gutter rows). */
-export const CLIP_CHAR_ROW_HEIGHT_PX = 40;
+export const CLIP_CHAR_ROW_HEIGHT_PX = 60;
 const CHAR_ROW_H = CLIP_CHAR_ROW_HEIGHT_PX;
 const TITLE_TOP = 6;
 const TITLE_SIZE = 11;

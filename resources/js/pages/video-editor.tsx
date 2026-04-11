@@ -1246,30 +1246,19 @@ export default function VideoEditor() {
                                 <div className="sticky top-0 z-20 h-0 w-full overflow-visible pointer-events-none">
                                     <div
                                         id="seeker-line"
-                                        className="pointer-events-none absolute -mr-px overflow-visible"
+                                        className={cn(
+                                            'pointer-events-none absolute -mr-px w-px overflow-visible bg-neutral-300 dark:bg-neutral-600',
+                                            isScrubbing ? '' : 'transition-all duration-250 ease-linear',
+                                        )}
                                         style={{
                                             left: `${timelineGutterPx + currentTime * PX_PER_SECOND * zoomLevel}px`,
                                             top: 0,
-                                            width: 1,
                                             height: Math.max(timelineInnerHeightPx, 1),
                                         }}
                                     >
                                         <Triangle
                                             size={15}
-                                            className="pointer-events-none absolute -left-[7px] top-0 rotate-180 fill-foreground stroke-0 text-foreground"
-                                        />
-                                        <div
-                                            className={cn(
-                                                'pointer-events-none absolute left-0 w-px bg-neutral-300 dark:bg-neutral-600',
-                                                isScrubbing ? '' : 'transition-all duration-250 ease-linear',
-                                            )}
-                                            style={{
-                                                top: TIMELINE_RULER_HEIGHT_PX,
-                                                height: Math.max(
-                                                    timelineInnerHeightPx - TIMELINE_RULER_HEIGHT_PX,
-                                                    1,
-                                                ),
-                                            }}
+                                            className="pointer-events-none absolute -left-[7px] top-0 z-10 rotate-180 fill-foreground stroke-0 text-foreground"
                                         />
                                     </div>
                                 </div>
@@ -1314,7 +1303,7 @@ export default function VideoEditor() {
                                                 style={{ height: CLIP_CHAR_ROW_HEIGHT_PX }}
                                                 key={face}
                                             >
-                                                <Button size="icon-xs" variant="ghost" type="button">
+                                                <Button className='rounded-full' size="icon-lg" variant="ghost" type="button">
                                                     <img
                                                         className="size-6"
                                                         alt=""
