@@ -198,6 +198,7 @@ export default function VideoEditor() {
     const [showWhat, setShowWhat] = useState<'video' | 'canvas'>('canvas')
     const [timelineViewportWidth, setTimelineViewportWidth] = useState(0)
     const [timelineInnerHeightPx, setTimelineInnerHeightPx] = useState(0)
+    const [showFaces, setShowFaces] = useState(true)
 
     useLayoutEffect(() => {
         const el = timelineInnerRef.current
@@ -525,7 +526,7 @@ export default function VideoEditor() {
         viewportCssWidth: timelineViewportWidth,
         zoomLevel,
     })
-    const timelineGutterPx = faces.size > 0 ? TIMELINE_FACE_GUTTER_PX : 0
+    const timelineGutterPx = faces.size > 0 && !detect && showFaces ? TIMELINE_FACE_GUTTER_PX : 0
     const timelineContentWidthPx = timelineGutterPx + timelineSpanPx
 
     useEffect(() => {
@@ -1088,7 +1089,7 @@ export default function VideoEditor() {
                 <div className="flex h-full min-h-0 w-full flex-col">
                     <div className="grid shrink-0 grid-cols-3 items-center gap-2 bg-background pt-4 pb-4">
                         <div className='flex justify-start items-center pl-3 gap-3'>
-                            <Button size="icon" variant="ghost">
+                            <Button onClick={() => setShowFaces(!showFaces)} size="icon" variant="ghost">
                                 <span><ScanFace strokeWidth={2.75} /></span>
                             </Button>
                             <Button onClick={() => {
@@ -1147,41 +1148,8 @@ export default function VideoEditor() {
                         </div>
                     </div>
                     <div className="relative flex min-h-0 flex-1 flex-col border-t">
-                        {
-                            // faces.size > 0 && (
-                            //     <div ref={facesScrollRef} onScroll={(e) => {
-                            //         console.log('charscroll')
-
-                            //         // if (timelineScrollRef.current) {
-                            //         //     timelineScrollRef.current.scrollTop = e.currentTarget.scrollTop
-                            //         // }
-                            //     }} className="h-full overflow-y-scroll">
-                            //         <div className="w-full flex flex-col gap-2 pt-17 px-4 pb-4 mb-10 bg-teal-950">
-                            //             {
-                            //                 [...faces].map((face) => (
-                            //                     <div className="text-xs flex items-center overflow-x-clip gap-1" key={face}>
-                            //                         <Button size="icon-sm" variant="ghost">
-                            //                         {/* <span className="material-symbols-outlined text-muted-foreground">
-                            //                             {
-                            //                                 ['face', 'face_2', 'face_3', 'face_4', 'face_5', 'face_6'][hashToInt(face) % 6]
-                            //                             }
-                            //                         </span> */}
-                            //                         <img className='size-6' src={`https://api.dicebear.com/9.x/big-smile/svg?seed=${face}`} />
-                            //                         </Button>
-                            //                         {/* <div className='text-xs font-bold'>{face}</div> */}
-                            //                     </div>
-                            //                 ))
-                            //             }
-                            //         </div>
-                            //     </div>
-                            // )
-                        }
                         <div
                             ref={timelineScrollRef}
-                            onScroll={() => {
-                                // Sync vertical scroll with faces column when needed:
-                                // facesScrollRef.current && (facesScrollRef.current.scrollTop = ...)
-                            }}
                             className="min-h-0 w-full flex-1 cursor-col-resize touch-none select-none overflow-x-auto overflow-y-auto"
                             onPointerDown={(e) => {
                                 e.preventDefault();
@@ -1264,13 +1232,13 @@ export default function VideoEditor() {
                                 </div>
 
                                 <div className="sticky top-0 z-10 flex w-full bg-background">
-                                    {timelineGutterPx > 0 ? (
+                                    
                                         <div
-                                            className="shrink-0 border-r border-muted-foreground/40 bg-background"
+                                            className="border-r border-muted-foreground/40 bg-background transition-discrete duration-200"
                                             style={{ width: timelineGutterPx }}
                                             aria-hidden
                                         />
-                                    ) : null}
+                                    
                                     <div
                                         ref={rulerContainerRef}
                                         className="min-w-0"
@@ -1289,17 +1257,18 @@ export default function VideoEditor() {
                                     <div
                                         ref={facesScrollRef}
                                         className={cn(
-                                            'shrink-0 border-r border-muted-foreground/40 bg-background',
-                                            timelineGutterPx === 0 && 'hidden',
+                                            'border-r border-muted-foreground/40 bg-background transition-all duration-200 overflow-clip',
+                                            // timelineGutterPx === 0 && 'hidden',
                                         )}
                                         style={{
                                             width: timelineGutterPx,
                                             paddingTop: CLIP_FIRST_CHAR_ROW_TOP_PX,
                                         }}
                                     >
-                                        {[...faces].map((face) => (
+                                    { 
+                                        !detect && [...faces].map((face) => (
                                             <div
-                                                className="flex shrink-0 items-center justify-center"
+                                                className="flex items-center justify-center"
                                                 style={{ height: CLIP_CHAR_ROW_HEIGHT_PX }}
                                                 key={face}
                                             >
@@ -1311,7 +1280,8 @@ export default function VideoEditor() {
                                                     />
                                                 </Button>
                                             </div>
-                                        ))}
+                                        ))
+                                    }
                                     </div>
                                     <div
                                         className="min-w-0 shrink-0"
