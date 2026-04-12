@@ -1148,6 +1148,11 @@ export default function VideoEditor() {
                         </div>
                     </div>
                     <div className="relative flex min-h-0 flex-1 flex-col border-t">
+                        {
+                            showFaces && (
+                                <div className="h-10 w-15 bg-background relative top-0 -mb-10 z-50" />
+                            )
+                        }
                         <div
                             ref={timelineScrollRef}
                             className="min-h-0 w-full flex-1 cursor-col-resize touch-none select-none overflow-x-auto overflow-y-auto"
@@ -1226,7 +1231,7 @@ export default function VideoEditor() {
                                     >
                                         <Triangle
                                             size={15}
-                                            className="pointer-events-none absolute -left-[7px] top-0 rotate-180 fill-foreground stroke-0 text-foreground"
+                                            className="pointer-events-none absolute -left-[7px] -top-0.5 rotate-180 fill-foreground stroke-0 text-foreground"
                                         />
                                     </div>
                                 </div>
@@ -1234,7 +1239,7 @@ export default function VideoEditor() {
                                 <div className="sticky top-0 z-30 flex w-full">
                                     <div
                                         className="transition-discrete duration-200 sticky z-200 left-0 bg-background"
-                                        style={{ width: timelineGutterPx-5 }}
+                                        style={{ width: timelineGutterPx }}
                                         aria-hidden
                                     >
                                     </div>
@@ -1296,6 +1301,7 @@ export default function VideoEditor() {
                                 </div>
                             </div>
                         </div>
+                        
                     </div>
                     
                 </div>
