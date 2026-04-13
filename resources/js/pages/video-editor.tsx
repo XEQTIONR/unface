@@ -531,7 +531,7 @@ export default function VideoEditor() {
     }, [duration, zoomLevel, faces.size])
 
     const durationSecForTimeline = duration > 0 ? duration : videoLength > 0 ? videoLength : 0
-    const timelineSpanPx = computeTimelineContentWidthPx({
+    const timelineSpanPx =  computeTimelineContentWidthPx({
         durationSec: durationSecForTimeline,
         currentTime,
         viewportCssWidth: timelineViewportWidth,
@@ -1023,6 +1023,7 @@ export default function VideoEditor() {
             recordingStartSec: clipRecordingStartRef.current,
             spinnerAngleRad: (performance.now() / 400) % (Math.PI * 2),
             showFrames: showFrames,
+            chars: [...faces],
         })
     }, [
         clips,
@@ -1034,6 +1035,7 @@ export default function VideoEditor() {
         currentTime,
         timelineSpanPx,
         showFrames,
+        faces,
     ])
 
     useEffect(() => {
@@ -1109,8 +1111,8 @@ export default function VideoEditor() {
                             }} size="icon" variant="ghost">
                                 <span><Trash strokeWidth={2.75} /></span>
                             </Button>
-                            <Button size="icon" variant="ghost">
-                                <span><SquareStack strokeWidth={2.15} /></span>
+                            <Button onClick={() => setShowFrames(!showFrames)} size="icon" variant="ghost">
+                                <span><SquareStack  strokeWidth={2.15} /></span>
                             </Button>
                         </div>
                         <div className="flex justify-center items-center gap-1">

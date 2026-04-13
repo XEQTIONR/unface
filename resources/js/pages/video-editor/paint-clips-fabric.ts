@@ -2,7 +2,7 @@ import { Circle, FabricText, Rect } from 'fabric';
 import type { StaticCanvas } from 'fabric';
 import type { Clip, IdentityFrame } from '@/types/video';
 import { characterTimeRangesFromFrames } from './character-time-ranges';
-import { PX_PER_SECOND } from './constants';
+import { PX_PER_SECOND, PX_PER_FRAME } from './constants';
 
 export const CLIP_TRACK = {
     trackBg: 'rgba(64, 64, 64, 0.65)',
@@ -72,11 +72,16 @@ export function syncClipsFabricCanvas(
         liveVideoTimeSec: number
         recordingStartSec: number
         spinnerAngleRad: number,
-        showFrames?: boolean
+        showFrames: boolean
+        chars: string[]
     },
 ): void {
     const pxPerSec = PX_PER_SECOND * opts.zoomLevel;
     const trackW = Math.max(1, opts.trackWidthPx);
+    let lastFrame = -1
+
+    const chars = new Set(frames.flatMap(({boxes}) => boxes.map(({name}) => name)));
+    console.log('chars', chars)
 
     const perClipLayout = opts.clips.map((clip) => {
         const ranges =
@@ -87,7 +92,12 @@ export function syncClipsFabricCanvas(
                       clip.end,
                   )
                 : [];
-        const w = clipWidthPx(clip, pxPerSec);
+        let w = clipWidthPx(clip, pxPerSec)
+
+        if (opts.showFrames) {
+            w = frames.filter(({time}) => time >= clip.start && time <= (clip.end ?? -1)).length * PX_PER_FRAME;
+        }
+        
         const h = clipColumnHeight(ranges.length > 0, ranges.length);
 
         return { clip, ranges, w, h };
@@ -125,15 +135,20 @@ export function syncClipsFabricCanvas(
     );
 
     let x = 0;
+    console.log('perClipLayout', perClipLayout)
+    console.log('frames', frames)
 
     for (const { clip, ranges, w, h } of perClipLayout) {
         if (w <= 0) {
             continue;
         }
 
+        const frameStart = frames.findIndex(({time}) => time >= clip.start)
+        const frameEnd = frames.findLastIndex(({time}) => time <= (clip.end ?? -1))
+        
         const colH = Math.min(h, cssH);
 
-        objs.push(
+        objs.push( // clip body
             new Rect({
                 left: x,
                 top: 0,
@@ -148,7 +163,7 @@ export function syncClipsFabricCanvas(
             }),
         );
 
-        objs.push(
+        objs.push( // clip title
             new FabricText(clip.name.toUpperCase(), {
                 left: x + 6,
                 top: TITLE_TOP,
@@ -162,7 +177,7 @@ export function syncClipsFabricCanvas(
             }),
         );
 
-        if (ranges.length === 0) {
+        if (ranges.length === 0) { // clip spinner
             const cx = x + w / 2;
             const cy = TITLE_TOP + TITLE_SIZE + SPINNER_AREA_H / 2;
             objs.push(
@@ -182,62 +197,89 @@ export function syncClipsFabricCanvas(
             );
         } else {
             let ry = TITLE_TOP + TITLE_SIZE + SECTION_GAP;
+            
+            if (opts.showFrames) {
+                console.log('show frames', frameStart, frameEnd)
 
-            for (const { name, ranges: charRanges } of ranges) {
-                objs.push(
-                    new Rect({
-                        left: x + 4,
-                        top: ry,
-                        width: w - 8,
-                        height: CHAR_ROW_H - 4,
-                        fill: CLIP_TRACK.charRowBg,
-                        strokeWidth: 0,
-                        rx: 0,
-                        ry: 0,
-                        ...TOP_LEFT,
-                        ...NO_INTERACTION,
-                    }),
-                );
+                for (let i = frameStart; i <= frameEnd; i++) {
+                    const frame = frames[i]
+                    //console.log(frame)
 
-                for (const { start, end } of charRanges) {
-                    const segStart = Math.max(clip.start, start);
-                    const segEnd = Math.max(
-                        segStart,
-                        Math.min(clip.end ?? segStart, end ?? segStart),
-                    );
-                    const segW = (segEnd - segStart) * pxPerSec;
-                    const segX = x + (segStart - clip.start) * pxPerSec;
-
-                    if (segW > 0) {
+                    opts.chars.forEach((char, idx) => {
+                        const found = frame.boxes.find((box) => box.name === char)
                         objs.push(
                             new Rect({
-                                left: segX,
-                                top: ry + 2,
-                                width: segW,
-                                height: CHAR_ROW_H - 8,
-                                fill: CLIP_TRACK.charSegment,
-                                strokeWidth: 0,
+                                left: i * PX_PER_FRAME,
+                                top: ry + (idx * CHAR_ROW_H),
+                                width: PX_PER_FRAME,
+                                height: CHAR_ROW_H - 4,
+                                fill: found ? `rgba(0, 128, 0, 0.95)`: `rgba(20, 20, 20, 0.95)`,
+                                strokeWidth: 1,
+                                stroke: CLIP_TRACK.text,
                                 ...TOP_LEFT,
                                 ...NO_INTERACTION,
                             }),
                         );
-                    }
+                        
+                    });
                 }
-
-                objs.push(
-                    new FabricText(name, {
-                        left: x + 8,
-                        top: ry + 10,
-                        fontSize: 11,
-                        fontFamily: 'Arial',
-                        fill: CLIP_TRACK.text,
-                        originX: 'left',
-                        originY: 'top',
-                        ...NO_INTERACTION,
-                    }),
-                );
-
-                ry += CHAR_ROW_H;
+            } else {
+                for (const { name, ranges: charRanges } of ranges) {
+                    objs.push(
+                        new Rect({
+                            left: x + 4,
+                            top: ry,
+                            width: w - 8,
+                            height: CHAR_ROW_H - 4,
+                            fill: CLIP_TRACK.charRowBg,
+                            strokeWidth: 0,
+                            rx: 0,
+                            ry: 0,
+                            ...TOP_LEFT,
+                            ...NO_INTERACTION,
+                        }),
+                    );
+    
+                    for (const { start, end } of charRanges) {
+                        const segStart = Math.max(clip.start, start);
+                        const segEnd = Math.max(
+                            segStart,
+                            Math.min(clip.end ?? segStart, end ?? segStart),
+                        );
+                        const segW = (segEnd - segStart) * pxPerSec;
+                        const segX = x + (segStart - clip.start) * pxPerSec;
+    
+                        if (segW > 0) {
+                            objs.push(
+                                new Rect({
+                                    left: segX,
+                                    top: ry + 2,
+                                    width: segW,
+                                    height: CHAR_ROW_H - 8,
+                                    fill: CLIP_TRACK.charSegment,
+                                    strokeWidth: 0,
+                                    ...TOP_LEFT,
+                                    ...NO_INTERACTION,
+                                }),
+                            );
+                        }
+                    }
+    
+                    objs.push(
+                        new FabricText(name, {
+                            left: x + 8,
+                            top: ry + 10,
+                            fontSize: 11,
+                            fontFamily: 'Arial',
+                            fill: CLIP_TRACK.text,
+                            originX: 'left',
+                            originY: 'top',
+                            ...NO_INTERACTION,
+                        }),
+                    );
+    
+                    ry += CHAR_ROW_H;
+                }
             }
         }
 

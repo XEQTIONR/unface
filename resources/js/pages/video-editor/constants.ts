@@ -1,5 +1,7 @@
 export const PX_PER_SECOND = 10;
 
+export const PX_PER_FRAME = 10;
+
 /** How often to run face detection (ms). Lower = fresher boxes; slightly higher can help stability on slow GPUs. */
 export const DETECTION_INTERVAL_MS = 50;
 
