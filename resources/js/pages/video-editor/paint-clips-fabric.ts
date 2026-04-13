@@ -63,15 +63,16 @@ export function syncClipsFabricCanvas(
     fabric: StaticCanvas,
     frames: readonly IdentityFrame[],
     opts: {
-        clips: Clip[];
-        zoomLevel: number;
+        clips: Clip[]
+        zoomLevel: number
         /** CSS width of the clip row (usually matches ruler / `timelineSpanPx`). */
-        trackWidthPx: number;
-        isPlaying: boolean;
-        detect: boolean;
-        liveVideoTimeSec: number;
-        recordingStartSec: number;
-        spinnerAngleRad: number;
+        trackWidthPx: number
+        isPlaying: boolean
+        detect: boolean
+        liveVideoTimeSec: number
+        recordingStartSec: number
+        spinnerAngleRad: number,
+        showFrames?: boolean
     },
 ): void {
     const pxPerSec = PX_PER_SECOND * opts.zoomLevel;

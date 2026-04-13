@@ -7,14 +7,24 @@ import * as tf from '@tensorflow/tfjs'
 import * as faceapi from '@vladmandic/face-api'
 import type { FaceDetection } from '@vladmandic/face-api'
 import { FabricText, Rect, StaticCanvas } from 'fabric'
-import { Maximize, MinusCircle, PanelBottomClose, Pause, Play, PlusCircle, ScanFace, Trash, Triangle } from 'lucide-react'
+import { EyeClosed, Maximize, MinusCircle, PanelBottomClose, Pause, Pencil, Play, PlusCircle, ScanFace, SquareStack, Trash, Triangle } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import Dropzone from '@/components/dropzone'
 import { Button } from '@/components/ui/button'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Separator } from '@/components/ui/separator'
 import { Slider } from '@/components/ui/slider'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { create } from '@/routes/videos'
 import type { FaceBox, IdentityBox, IdentityFrame } from '@/types/video'
@@ -33,6 +43,7 @@ import {
     syncClipsFabricCanvas,
 } from './video-editor/paint-clips-fabric'
 import { syncRulerFabricCanvas } from './video-editor/paint-ruler-fabric'
+
 
 /** Ruler/timeline content stays at least this far past the playhead (px). */
 const TIMELINE_RIGHT_MARGIN_PX = 64
@@ -199,7 +210,8 @@ export default function VideoEditor() {
     const [timelineViewportWidth, setTimelineViewportWidth] = useState(0)
     const [timelineInnerHeightPx, setTimelineInnerHeightPx] = useState(0)
     const [showFaces, setShowFaces] = useState(true)
-
+    const [showFrames, setShowFrames] = useState(false)
+    
     useLayoutEffect(() => {
         const el = timelineInnerRef.current
 
@@ -518,8 +530,7 @@ export default function VideoEditor() {
         setCurrentTime(t) // really important
     }, [duration, zoomLevel, faces.size])
 
-    const durationSecForTimeline =
-        duration > 0 ? duration : videoLength > 0 ? videoLength : 0
+    const durationSecForTimeline = duration > 0 ? duration : videoLength > 0 ? videoLength : 0
     const timelineSpanPx = computeTimelineContentWidthPx({
         durationSec: durationSecForTimeline,
         currentTime,
@@ -618,9 +629,7 @@ export default function VideoEditor() {
 
     const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>)  => {
         calculateAndSetVideoDimensions()
-        // setTimeout(() => {
-            setShowWhat('canvas')
-        // }, 100)
+        setShowWhat('canvas')
         
         setDuration(e.currentTarget.duration)
         setVideoLength(e.currentTarget.duration)
@@ -1013,6 +1022,7 @@ export default function VideoEditor() {
             liveVideoTimeSec: videoRef.current?.currentTime ?? currentTime,
             recordingStartSec: clipRecordingStartRef.current,
             spinnerAngleRad: (performance.now() / 400) % (Math.PI * 2),
+            showFrames: showFrames,
         })
     }, [
         clips,
@@ -1023,6 +1033,7 @@ export default function VideoEditor() {
         detect,
         currentTime,
         timelineSpanPx,
+        showFrames,
     ])
 
     useEffect(() => {
@@ -1098,6 +1109,9 @@ export default function VideoEditor() {
                             }} size="icon" variant="ghost">
                                 <span><Trash strokeWidth={2.75} /></span>
                             </Button>
+                            <Button size="icon" variant="ghost">
+                                <span><SquareStack strokeWidth={2.15} /></span>
+                            </Button>
                         </div>
                         <div className="flex justify-center items-center gap-1">
                             <Button
@@ -1130,7 +1144,7 @@ export default function VideoEditor() {
                                 <span><MinusCircle strokeWidth={2.25} /></span>
                             </Button>
                             <Slider className='w-32' value={[zoomLevel]}
-                                max={10}
+                                max={15}
                                 min={1}
                                 step={0.5}
                                 onValueChange={(value) => setZoomLevel(value[0])}
@@ -1149,67 +1163,14 @@ export default function VideoEditor() {
                     </div>
                     <div className="relative flex min-h-0 flex-1 flex-col border-t">
                         {
-                            showFaces && (
-                                <div className="h-10 w-15 bg-background relative top-0 -mb-10 z-50" />
+                            showFaces && !detect && (
+                                <div className="h-9 w-15 bg-background relative top-0 -mb-9 z-50 border-t" />
                             )
                         }
                         <div
                             ref={timelineScrollRef}
-                            className="min-h-0 w-full flex-1 cursor-col-resize touch-none select-none overflow-x-auto overflow-y-auto"
-                            onPointerDown={(e) => {
-                                e.preventDefault();
-                                isScrubbingRef.current = true;
-                                setIsScrubbing(true);
-                                e.currentTarget.setPointerCapture(e.pointerId);
-                                setTimeFromClientX(e.clientX);
-                            }}
-                            onPointerMove={(e) => {
-                                if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
-                                    return;
-                                }
-
-                                setTimeFromClientX(e.clientX);
-                            }}
-                            onPointerUp={(e) => {
-                                e.currentTarget.releasePointerCapture(e.pointerId);
-                                isScrubbingRef.current = false;
-                                setIsScrubbing(false);
-
-                                if (!detect) {
-                                    const t = videoRef.current?.currentTime || 0
-                                    let low = 0
-                                    let high = idFramesRef.current.length - 1
-                                    let mid = Math.floor((low + high) / 2)
-                                    let found = false
-
-                                    while (low <= high && !found) {
-                                        mid = Math.floor((low + high) / 2)
-                                        
-
-                                        if (idFramesRef.current[mid].time < t) {
-                                            //
-                                            low = mid + 1
-                                        } else if (idFramesRef.current[mid].time > t) {
-                                            //
-                                            high = mid - 1
-                                        } else {
-                                            found = true
-                                        }
-                                    }
-
-                                    if (found) {
-                                        i.current = mid;
-                                    } else {
-                                        i.current = low;
-                                    }
-                                
-                                }
-                            }}
-                            onPointerCancel={(e) => {
-                                e.currentTarget.releasePointerCapture(e.pointerId);
-                                isScrubbingRef.current = false;
-                                setIsScrubbing(false);
-                            }}
+                            className="min-h-0 w-full flex-1 cursor-col-resize touch-none select-none overflow-x-auto overflow-y-auto "
+                            
                         >
                             <div
                                 ref={timelineInnerRef}
@@ -1236,7 +1197,63 @@ export default function VideoEditor() {
                                     </div>
                                 </div>
 
-                                <div className="sticky top-0 z-30 flex w-full">
+                                <div className="sticky top-0 z-30 flex w-full"
+                                    onPointerDown={(e) => {
+                                        e.preventDefault();
+                                        isScrubbingRef.current = true;
+                                        setIsScrubbing(true);
+                                        e.currentTarget.setPointerCapture(e.pointerId);
+                                        setTimeFromClientX(e.clientX);
+                                        console.log('pointer down')
+                                    }}
+                                    onPointerMove={(e) => {
+                                        if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
+                                            return;
+                                        }
+        
+                                        setTimeFromClientX(e.clientX);
+                                    }}
+                                    onPointerUp={(e) => {
+                                        e.currentTarget.releasePointerCapture(e.pointerId);
+                                        isScrubbingRef.current = false;
+                                        setIsScrubbing(false);
+        
+                                        if (!detect) {
+                                            const t = videoRef.current?.currentTime || 0
+                                            let low = 0
+                                            let high = idFramesRef.current.length - 1
+                                            let mid = Math.floor((low + high) / 2)
+                                            let found = false
+        
+                                            while (low <= high && !found) {
+                                                mid = Math.floor((low + high) / 2)
+                                                
+        
+                                                if (idFramesRef.current[mid].time < t) {
+                                                    //
+                                                    low = mid + 1
+                                                } else if (idFramesRef.current[mid].time > t) {
+                                                    //
+                                                    high = mid - 1
+                                                } else {
+                                                    found = true
+                                                }
+                                            }
+        
+                                            if (found) {
+                                                i.current = mid;
+                                            } else {
+                                                i.current = low;
+                                            }
+                                        
+                                        }
+                                    }}
+                                    onPointerCancel={(e) => {
+                                        e.currentTarget.releasePointerCapture(e.pointerId);
+                                        isScrubbingRef.current = false;
+                                        setIsScrubbing(false);
+                                    }}
+                                >
                                     <div
                                         className="transition-discrete duration-200 sticky z-200 left-0 bg-background"
                                         style={{ width: timelineGutterPx }}
@@ -1261,10 +1278,7 @@ export default function VideoEditor() {
                                 <div className="flex w-full min-w-0 bg-muted/30">
                                     <div
                                         ref={facesScrollRef}
-                                        className={cn(
-                                            'border-r border-muted-foreground/40 bg-background transition-all duration-200 overflow-clip sticky left-0 z-100',
-                                            // timelineGutterPx === 0 && 'hidden',
-                                        )}
+                                        className="border-r border-muted-foreground/40 bg-background transition-all duration-200 overflow-clip sticky left-0 z-100"
                                         style={{
                                             width: timelineGutterPx,
                                             paddingTop: CLIP_FIRST_CHAR_ROW_TOP_PX,
@@ -1277,13 +1291,45 @@ export default function VideoEditor() {
                                                 style={{ height: CLIP_CHAR_ROW_HEIGHT_PX }}
                                                 key={face}
                                             >
-                                                <Button className='rounded-full' size="icon-lg" variant="ghost" type="button">
-                                                    <img
-                                                        className="size-6"
-                                                        alt=""
-                                                        src={`https://api.dicebear.com/9.x/big-smile/svg?seed=${face}`}
-                                                    />
-                                                </Button>
+                                                <Tooltip>
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <TooltipTrigger asChild>
+                                                                <Button className='rounded-full' size="icon-lg" variant="ghost" type="button">
+                                                                    <img
+                                                                        className="size-6"
+                                                                        alt={`${face}'s avatar image`}
+                                                                        src={`https://api.dicebear.com/9.x/big-smile/svg?seed=${face}`}
+                                                                    />
+                                                                </Button>
+                                                            </TooltipTrigger>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent side="right" align="end" className="z-100 w-40">
+                                                            <DropdownMenuGroup>
+                                                                <DropdownMenuLabel>{face}</DropdownMenuLabel>
+                                                            <DropdownMenuItem>
+                                                                <Pencil />
+                                                                Edit
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem>
+                                                                <EyeClosed />
+                                                                Hide
+                                                            </DropdownMenuItem>
+                                                            </DropdownMenuGroup>
+                                                            <DropdownMenuSeparator />
+                                                            <DropdownMenuGroup>
+                                                            <DropdownMenuItem variant="destructive">
+                                                                <Trash />
+                                                                Delete
+                                                            </DropdownMenuItem>
+                                                            </DropdownMenuGroup>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                
+                                                    <TooltipContent>
+                                                        {face}
+                                                    </TooltipContent>
+                                                </Tooltip>
                                             </div>
                                         ))
                                     }
@@ -1291,6 +1337,60 @@ export default function VideoEditor() {
                                     <div
                                         className="min-w-0 shrink-0"
                                         style={{ width: timelineSpanPx }}
+                                        onPointerDown={(e) => {
+                                            e.preventDefault();
+                                            isScrubbingRef.current = true;
+                                            setIsScrubbing(true);
+                                            e.currentTarget.setPointerCapture(e.pointerId);
+                                            setTimeFromClientX(e.clientX);
+                                        }}
+                                        onPointerMove={(e) => {
+                                            if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
+                                                return;
+                                            }
+            
+                                            setTimeFromClientX(e.clientX);
+                                        }}
+                                        onPointerUp={(e) => {
+                                            e.currentTarget.releasePointerCapture(e.pointerId);
+                                            isScrubbingRef.current = false;
+                                            setIsScrubbing(false);
+            
+                                            if (!detect) {
+                                                const t = videoRef.current?.currentTime || 0
+                                                let low = 0
+                                                let high = idFramesRef.current.length - 1
+                                                let mid = Math.floor((low + high) / 2)
+                                                let found = false
+            
+                                                while (low <= high && !found) {
+                                                    mid = Math.floor((low + high) / 2)
+                                                    
+            
+                                                    if (idFramesRef.current[mid].time < t) {
+                                                        //
+                                                        low = mid + 1
+                                                    } else if (idFramesRef.current[mid].time > t) {
+                                                        //
+                                                        high = mid - 1
+                                                    } else {
+                                                        found = true
+                                                    }
+                                                }
+            
+                                                if (found) {
+                                                    i.current = mid;
+                                                } else {
+                                                    i.current = low;
+                                                }
+                                            
+                                            }
+                                        }}
+                                        onPointerCancel={(e) => {
+                                            e.currentTarget.releasePointerCapture(e.pointerId);
+                                            isScrubbingRef.current = false;
+                                            setIsScrubbing(false);
+                                        }}
                                     >
                                         <canvas
                                             ref={clipsCanvasRef}
@@ -1301,9 +1401,7 @@ export default function VideoEditor() {
                                 </div>
                             </div>
                         </div>
-                        
                     </div>
-                    
                 </div>
             </ResizablePanel>
         </ResizablePanelGroup>

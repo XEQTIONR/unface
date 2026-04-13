@@ -19,7 +19,7 @@ export type Clip = {
 
 export type CharacterTimeRange = {
     name: string
-    ranges: TimeRange[]
+    ranges: (TimeRange & {firstFrame?: number, lastFrame?: number})[]
     lastFrame: number
 }
 

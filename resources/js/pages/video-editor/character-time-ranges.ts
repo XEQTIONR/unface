@@ -14,15 +14,17 @@ export function characterTimeRangesFromFrames(
             const i = chars.findIndex(({ name: charName }) => charName === name)
 
             if (i === -1) {
-                chars.push({ name, ranges: [{ start: time }], lastFrame: index })
+                chars.push({ name, ranges: [{ start: time, firstFrame: index, lastFrame: index }], lastFrame: index })
             } else {
                 if (chars[i].lastFrame === index - 1) {
                     chars[i].ranges[chars[i].ranges.length - 1].end = time
+                    chars[i].ranges[chars[i].ranges.length - 1].lastFrame = index
                 } else {
-                    chars[i].ranges.push({ start: time })
+                    chars[i].ranges.push({ start: time, firstFrame: index, lastFrame: index })
                 }
 
                 chars[i].lastFrame = index
+
             }
         }
     })
