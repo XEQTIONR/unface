@@ -88,31 +88,36 @@ function playheadOffsetInTimelineContentPx(opts: {
     return currentTimeSec * PX_PER_SECOND * zoomLevel
 }
 
-/** Last identity frame index with `frame.time <= t`, or -1 if none. */
-function identityFrameIndexAtOrBefore(
+/**
+ * Which recorded frame to show during playback at time `t`.
+ * Uses midpoints between adjacent `frame.time` values as boundaries so small
+ * jitter in `video.currentTime` does not flip the active index back and forth.
+ */
+function identityFrameIndexForPlayback(
     frames: readonly { time: number }[],
     t: number,
 ): number {
-    if (frames.length === 0) {
+    const n = frames.length
+
+    if (n === 0) {
         return -1
     }
 
-    let lo = 0
-    let hi = frames.length - 1
-    let best = -1
+    if (t < frames[0].time) {
+        return -1
+    }
 
-    while (lo <= hi) {
-        const mid = (lo + hi) >> 1
+    for (let i = 0; i < n; i++) {
+        const lo = i === 0 ? frames[0].time : (frames[i - 1].time + frames[i].time) / 2
+        const hi =
+            i === n - 1 ? Number.POSITIVE_INFINITY : (frames[i].time + frames[i + 1].time) / 2
 
-        if (frames[mid].time <= t) {
-            best = mid
-            lo = mid + 1
-        } else {
-            hi = mid - 1
+        if (t >= lo && t < hi) {
+            return i
         }
     }
 
-    return best
+    return n - 1
 }
 
 const FACE_OVERLAY_KEY = '__unfaceFaceOverlay' as const
@@ -549,7 +554,10 @@ export default function VideoEditor() {
             fCanvas.remove(...legacyFabricImages)
         }
 
-        removeFabricFaceOverlays(fCanvas)
+        // Do not call removeFabricFaceOverlays here: the video is drawn in `before:render`,
+        // and clearing overlays every frame caused dashed boxes to flash (removed, then
+        // re-added in the same RAF after this returns). Face rects are owned by
+        // replaceFabricFaceOverlays in the playback / detection step.
         fCanvas.calcViewportBoundaries()
         fCanvas.renderAll()
 
@@ -889,7 +897,7 @@ export default function VideoEditor() {
             } else {
                 const frames = idFramesRef.current
                 const t = video.currentTime
-                const idx = identityFrameIndexAtOrBefore(frames, t)
+                const idx = identityFrameIndexForPlayback(frames, t)
 
                 if (idx === lastPlaybackOverlayIdx.current) {
                     skipFaceOverlayRedraw = true
