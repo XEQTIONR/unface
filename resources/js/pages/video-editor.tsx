@@ -70,6 +70,24 @@ function computeTimelineContentWidthPx(opts: {
     )
 }
 
+/** Horizontal offset (px) from the start of the timeline content (after the face gutter) to the playhead. */
+function playheadOffsetInTimelineContentPx(opts: {
+    showFrames: boolean
+    frameCount: number
+    currentTimeSec: number
+    zoomLevel: number
+    durationSec: number
+}): number {
+    const { showFrames, frameCount, currentTimeSec, zoomLevel, durationSec } = opts
+    const frameStripPx = frameCount * PX_PER_FRAME
+
+    if (showFrames && frameStripPx > 0 && durationSec > 1e-9) {
+        return (currentTimeSec / durationSec) * frameStripPx
+    }
+
+    return currentTimeSec * PX_PER_SECOND * zoomLevel
+}
+
 const FACE_OVERLAY_KEY = '__unfaceFaceOverlay' as const
 
 const cyanOverlayStroke = 'rgba(0, 255, 255, 0.95)'
@@ -233,10 +251,6 @@ export default function VideoEditor() {
             ro.disconnect()
         }
     }, [])
-
-    useEffect(() => {
-        setTotalFrames(idFramesRef.current.length)
-    }, [idFramesRef])
 
     useEffect(() => {
         if (videoPanelRef.current) {
@@ -521,30 +535,59 @@ export default function VideoEditor() {
         const rect = timeline.getBoundingClientRect()
         const gutter = faces.size > 0 ? TIMELINE_FACE_GUTTER_PX : 0
         const x = clientX - rect.left + timeline.scrollLeft - gutter
-        const raw = x / (PX_PER_SECOND * zoomLevel)
         const maxTime =
             Number.isFinite(video.duration) && video.duration > 0
                 ? video.duration
                 : duration > 0
                   ? duration
-                  : undefined
-        const t =
-            maxTime != null && maxTime > 0 ? Math.max(0, Math.min(raw, maxTime)) : Math.max(0, raw)
+                  : videoLength > 0
+                    ? videoLength
+                    : undefined
+
+        let t: number
+
+        if (showFrames && idFramesRef.current.length > 0) {
+            const stripW = idFramesRef.current.length * PX_PER_FRAME
+            const rawT =
+                maxTime != null && maxTime > 0 ? (x / stripW) * maxTime : 0
+
+            t =
+                maxTime != null && maxTime > 0
+                    ? Math.max(0, Math.min(rawT, maxTime))
+                    : Math.max(0, rawT)
+        } else {
+            const raw = x / (PX_PER_SECOND * zoomLevel)
+
+            t =
+                maxTime != null && maxTime > 0
+                    ? Math.max(0, Math.min(raw, maxTime))
+                    : Math.max(0, raw)
+        }
 
         video.currentTime = t
-        
+
         setCurrentTime(t) // really important
-    }, [duration, zoomLevel, faces.size])
+    }, [duration, zoomLevel, faces.size, showFrames, videoLength])
 
     const durationSecForTimeline = duration > 0 ? duration : videoLength > 0 ? videoLength : 0
-    const timelineSpanPx =  computeTimelineContentWidthPx({
+    const timeBasedTimelineSpanPx = computeTimelineContentWidthPx({
         durationSec: durationSecForTimeline,
         currentTime,
         viewportCssWidth: timelineViewportWidth,
         zoomLevel,
     })
+    const frameStripWidthPx = totalFrames * PX_PER_FRAME
+    const timelineSpanPx =
+        showFrames && frameStripWidthPx > 0 ? frameStripWidthPx : timeBasedTimelineSpanPx
     const timelineGutterPx = faces.size > 0 && !detect && showFaces ? TIMELINE_FACE_GUTTER_PX : 0
     const timelineContentWidthPx = timelineGutterPx + timelineSpanPx
+    const playheadContentOffsetPx = playheadOffsetInTimelineContentPx({
+        showFrames,
+        frameCount: totalFrames,
+        currentTimeSec: currentTime,
+        zoomLevel,
+        durationSec: durationSecForTimeline,
+    })
 
     useEffect(() => {
         const el = timelineScrollRef.current
@@ -571,9 +614,8 @@ export default function VideoEditor() {
             return
         }
 
-        const pxPerSec = PX_PER_SECOND * zoomLevel
         const gutter = faces.size > 0 ? TIMELINE_FACE_GUTTER_PX : 0
-        const playheadPx = gutter + currentTime * pxPerSec
+        const playheadPx = gutter + playheadContentOffsetPx
         const margin = TIMELINE_RIGHT_MARGIN_PX
         const viewW = el.clientWidth
         const maxScroll = Math.max(0, el.scrollWidth - viewW)
@@ -590,7 +632,14 @@ export default function VideoEditor() {
         if (next !== el.scrollLeft) {
             el.scrollLeft = next
         }
-    }, [currentTime, zoomLevel, isPlaying, isScrubbing, faces.size])
+    }, [
+        currentTime,
+        zoomLevel,
+        isPlaying,
+        isScrubbing,
+        faces.size,
+        playheadContentOffsetPx,
+    ])
 
 
     const calculateAndSetVideoDimensions = useCallback(() => {
@@ -630,6 +679,8 @@ export default function VideoEditor() {
 
         const url = URL.createObjectURL(file)
         videoBlobUrlRef.current = url
+        idFramesRef.current = []
+        setTotalFrames(0)
         setVideoFileUrl(url)
     }, [])
 
@@ -771,6 +822,7 @@ export default function VideoEditor() {
                         boxes: charsInFrame,
                         time: video.currentTime
                     })
+                    setTotalFrames(idFramesRef.current.length)
 
                     paintClipsCanvasRef.current()
     
@@ -946,8 +998,8 @@ export default function VideoEditor() {
             zoomLevel,
         })
 
-        if (showFrames) {
-            cssWidth = idFramesRef.current.length * PX_PER_FRAME;
+        if (showFrames && totalFrames > 0) {
+            cssWidth = totalFrames * PX_PER_FRAME
         }
 
         const cssHeight = TIMELINE_RULER_HEIGHT_PX
@@ -977,7 +1029,16 @@ export default function VideoEditor() {
             showFrames,
             totalFrames: idFramesRef.current.length,
         })
-    }, [zoomLevel, currentTime, duration, videoLength, timelineViewportWidth, formatTime, showFrames, idFramesRef])
+    }, [
+        zoomLevel,
+        currentTime,
+        duration,
+        videoLength,
+        timelineViewportWidth,
+        formatTime,
+        showFrames,
+        totalFrames,
+    ])
 
     useEffect(() => {
         paintTimelineRuler()
@@ -1007,8 +1068,8 @@ export default function VideoEditor() {
             videoLengthSec * pxPerSec,
         )
 
-        if (showFrames) {
-            trackWidthPx = idFramesRef.current.length * PX_PER_FRAME;
+        if (showFrames && totalFrames > 0) {
+            trackWidthPx = totalFrames * PX_PER_FRAME
         }
 
         const placeholderH = 80
@@ -1054,6 +1115,7 @@ export default function VideoEditor() {
         timelineSpanPx,
         showFrames,
         faces,
+        totalFrames,
     ])
 
     useEffect(() => {
@@ -1205,7 +1267,7 @@ export default function VideoEditor() {
                                             isScrubbing ? '' : ' z-100',
                                         )}
                                         style={{
-                                            left: `${(timelineGutterPx + currentTime * PX_PER_SECOND * zoomLevel) + ((detect && isPlaying) ? 10 : -3)}px`, // -3 when playing back  // + 10 when scrubbing
+                                            left: `${(timelineGutterPx + playheadContentOffsetPx) + ((detect && isPlaying) ? 10 : -3)}px`, // -3 when playing back  // + 10 when scrubbing
                                             top: 0,
                                             height: Math.max(timelineInnerHeightPx, 1),
                                         }}
@@ -1356,7 +1418,7 @@ export default function VideoEditor() {
                                     </div>
                                     <div
                                         className="min-w-0 shrink-0 border-r border-teal-300"
-                                        style={{ width: showFrames ? totalFrames * PX_PER_FRAME : timelineSpanPx }}
+                                        style={{ width: timelineSpanPx }}
                                         onPointerDown={(e) => {
                                             e.preventDefault();
                                             isScrubbingRef.current = true;
