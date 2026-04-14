@@ -88,6 +88,33 @@ function playheadOffsetInTimelineContentPx(opts: {
     return currentTimeSec * PX_PER_SECOND * zoomLevel
 }
 
+/** Last identity frame index with `frame.time <= t`, or -1 if none. */
+function identityFrameIndexAtOrBefore(
+    frames: readonly { time: number }[],
+    t: number,
+): number {
+    if (frames.length === 0) {
+        return -1
+    }
+
+    let lo = 0
+    let hi = frames.length - 1
+    let best = -1
+
+    while (lo <= hi) {
+        const mid = (lo + hi) >> 1
+
+        if (frames[mid].time <= t) {
+            best = mid
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+
+    return best
+}
+
 const FACE_OVERLAY_KEY = '__unfaceFaceOverlay' as const
 
 const cyanOverlayStroke = 'rgba(0, 255, 255, 0.95)'
@@ -188,6 +215,11 @@ export default function VideoEditor() {
     const fabricCanvasRef = useRef<StaticCanvas | null>(null)
     const chars = useRef<IdentityBox[]>([])
     const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null)
+    const currentTimeRef = useRef(0)
+    const paintTimelineRulerRef = useRef<() => void>(() => {})
+    const totalFramesRafScheduled = useRef(false)
+    /** Playback: last identity-frame index we drew; skip overlay rebuild when unchanged. */
+    const lastPlaybackOverlayIdx = useRef(-2)
     const i = useRef(0)
     const idFramesRef = useRef<IdentityFrame[]>([])
     const isScrubbingRef = useRef(false)
@@ -565,8 +597,14 @@ export default function VideoEditor() {
         }
 
         video.currentTime = t
+        currentTimeRef.current = t
+        setCurrentTime(t)
 
-        setCurrentTime(t) // really important
+        paintClipsCanvasRef.current()
+
+        if (!showFrames) {
+            paintTimelineRulerRef.current()
+        }
     }, [duration, zoomLevel, faces.size, showFrames, videoLength])
 
     const durationSecForTimeline = duration > 0 ? duration : videoLength > 0 ? videoLength : 0
@@ -680,6 +718,7 @@ export default function VideoEditor() {
         const url = URL.createObjectURL(file)
         videoBlobUrlRef.current = url
         idFramesRef.current = []
+        lastPlaybackOverlayIdx.current = -2
         setTotalFrames(0)
         setVideoFileUrl(url)
     }, [])
@@ -735,6 +774,7 @@ export default function VideoEditor() {
             const strokeW = Math.max(2, Math.round(cw / 400))
             const fontSize = 30
             const currentNames: string[] = []
+            let skipFaceOverlayRedraw = false
 
             if (detect) {
                 let ns: IdentityBox[] = [...chars.current];
@@ -822,7 +862,14 @@ export default function VideoEditor() {
                         boxes: charsInFrame,
                         time: video.currentTime
                     })
-                    setTotalFrames(idFramesRef.current.length)
+
+                    if (!totalFramesRafScheduled.current) {
+                        totalFramesRafScheduled.current = true
+                        requestAnimationFrame(() => {
+                            totalFramesRafScheduled.current = false
+                            setTotalFrames(idFramesRef.current.length)
+                        })
+                    }
 
                     paintClipsCanvasRef.current()
     
@@ -839,38 +886,18 @@ export default function VideoEditor() {
                 } else {
                     setCurrentFaces(new Set([]))
                 }
-            } else if (i.current < idFramesRef.current.length) { // render recorded frames
-
+            } else {
+                const frames = idFramesRef.current
                 const t = video.currentTime
+                const idx = identityFrameIndexAtOrBefore(frames, t)
 
-                if (Math.abs(t - idFramesRef.current[i.current].time) < 0.05) {
+                if (idx === lastPlaybackOverlayIdx.current) {
+                    skipFaceOverlayRedraw = true
+                } else {
+                    lastPlaybackOverlayIdx.current = idx
 
-                    const fr = []
-
-                    for (const box of idFramesRef.current[i.current].boxes) {
-                        overlayRects.push({
-                            x: box.x * sx,
-                            y: box.y * sy,
-                            w: box.w * sx,
-                            h: box.h * sy,
-                            dashed: true,
-                        })
-                        overlayLabels.push({ x: box.x * sx, y: box.y * sy, text: box.name })
-                        fr.push(box.name)
-                    }
-
-                    setCurrentFaces(new Set(fr))
-
-                    i.current++
-                } else if (i.current > 0) {
-                    
-                    const f = idFramesRef.current[i.current - 1]
-
-                    if (Math.abs(t - f.time) < 0.05) {
-
-                        const fr = []
-
-                        for (const box of idFramesRef.current[i.current - 1].boxes) {
+                    if (idx >= 0) {
+                        for (const box of frames[idx].boxes) {
                             overlayRects.push({
                                 x: box.x * sx,
                                 y: box.y * sy,
@@ -879,18 +906,21 @@ export default function VideoEditor() {
                                 dashed: true,
                             })
                             overlayLabels.push({ x: box.x * sx, y: box.y * sy, text: box.name })
-                            fr.push(box.name)
                         }
 
-                        setCurrentFaces(new Set(fr))
+                        setCurrentFaces(new Set(frames[idx].boxes.map((b) => b.name)))
+                    } else {
+                        setCurrentFaces(new Set())
                     }
                 }
             }
 
-            replaceFabricFaceOverlays(fCanvas, overlayRects, overlayLabels, {
-                strokeWidth: strokeW,
-                fontSize,
-            })
+            if (!skipFaceOverlayRedraw) {
+                replaceFabricFaceOverlays(fCanvas, overlayRects, overlayLabels, {
+                    strokeWidth: strokeW,
+                    fontSize,
+                })
+            }
 
             if (detect && !video.paused) {
                 paintClipsCanvasRef.current()
@@ -921,7 +951,21 @@ export default function VideoEditor() {
     }
 
     const onSeeked = () => {
-        requestAnimationFrame(() => paintVideoToDisplayCanvas())
+        requestAnimationFrame(() => {
+            paintVideoToDisplayCanvas()
+
+            const v = videoRef.current
+
+            if (v) {
+                currentTimeRef.current = v.currentTime
+            }
+
+            if (!showFrames) {
+                paintTimelineRulerRef.current()
+            }
+
+            paintClipsCanvasRef.current()
+        })
     }
 
     const onTimeUpdate = (e: SyntheticEvent<HTMLVideoElement>) => {
@@ -929,7 +973,13 @@ export default function VideoEditor() {
             return
         }
 
-        setCurrentTime(e.currentTarget.currentTime)
+        const t = e.currentTarget.currentTime
+        currentTimeRef.current = t
+        setCurrentTime(t)
+
+        if (!showFrames) {
+            paintTimelineRulerRef.current()
+        }
     }
 
     const onEnded = () => {
@@ -993,7 +1043,7 @@ export default function VideoEditor() {
 
         let cssWidth = computeTimelineContentWidthPx({
             durationSec,
-            currentTime,
+            currentTime: currentTimeRef.current,
             viewportCssWidth: timelineViewportWidth,
             zoomLevel,
         })
@@ -1031,7 +1081,6 @@ export default function VideoEditor() {
         })
     }, [
         zoomLevel,
-        currentTime,
         duration,
         videoLength,
         timelineViewportWidth,
@@ -1039,6 +1088,10 @@ export default function VideoEditor() {
         showFrames,
         totalFrames,
     ])
+
+    useEffect(() => {
+        paintTimelineRulerRef.current = paintTimelineRuler
+    }, [paintTimelineRuler])
 
     useEffect(() => {
         paintTimelineRuler()
@@ -1097,7 +1150,7 @@ export default function VideoEditor() {
             trackWidthPx,
             isPlaying,
             detect,
-            liveVideoTimeSec: videoRef.current?.currentTime ?? currentTime,
+            liveVideoTimeSec: videoRef.current?.currentTime ?? currentTimeRef.current,
             recordingStartSec: clipRecordingStartRef.current,
             spinnerAngleRad: (performance.now() / 400) % (Math.PI * 2),
             showFrames: showFrames,
@@ -1111,7 +1164,6 @@ export default function VideoEditor() {
         duration,
         isPlaying,
         detect,
-        currentTime,
         timelineSpanPx,
         showFrames,
         faces,
