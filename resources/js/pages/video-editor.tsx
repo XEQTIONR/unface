@@ -198,6 +198,7 @@ export default function VideoEditor() {
     const [duration, setDuration] = useState(0)
     const [faceApiReady, setFaceApiReady] = useState(false)
     const [faces, setFaces] = useState<Set<string>>(new Set([]))
+    const [totalFrames, setTotalFrames] = useState(0)
     const [isPlaying, setIsPlaying] = useState(false)
     const [isScrubbing, setIsScrubbing] = useState(false)
     const [metaLoaded, setMetaLoaded] = useState(false)
@@ -232,6 +233,10 @@ export default function VideoEditor() {
             ro.disconnect()
         }
     }, [])
+
+    useEffect(() => {
+        setTotalFrames(idFramesRef.current.length)
+    }, [idFramesRef])
 
     useEffect(() => {
         if (videoPanelRef.current) {
@@ -1197,7 +1202,7 @@ export default function VideoEditor() {
                                         id="seeker-line"
                                         className={cn(
                                             'pointer-events-none absolute -mr-px w-px overflow-visible bg-foreground',
-                                            isScrubbing ? '' : 'transition-all duration-250 ease-linear z-100',
+                                            isScrubbing ? '' : ' z-100',
                                         )}
                                         style={{
                                             left: `${(timelineGutterPx + currentTime * PX_PER_SECOND * zoomLevel) + ((detect && isPlaying) ? 10 : -3)}px`, // -3 when playing back  // + 10 when scrubbing
@@ -1350,8 +1355,8 @@ export default function VideoEditor() {
                                     }
                                     </div>
                                     <div
-                                        className="min-w-0 shrink-0"
-                                        style={{ width: timelineSpanPx }}
+                                        className="min-w-0 shrink-0 border-r border-teal-300"
+                                        style={{ width: showFrames ? totalFrames * PX_PER_FRAME : timelineSpanPx }}
                                         onPointerDown={(e) => {
                                             e.preventDefault();
                                             isScrubbingRef.current = true;

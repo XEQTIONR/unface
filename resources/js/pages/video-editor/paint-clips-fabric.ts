@@ -80,9 +80,6 @@ export function syncClipsFabricCanvas(
     const pxPerSec = PX_PER_SECOND * opts.zoomLevel;
     const trackW = Math.max(1, opts.trackWidthPx);
 
-    const chars = new Set(frames.flatMap(({boxes}) => boxes.map(({name}) => name)));
-    console.log('chars', chars)
-
     const perClipLayout = opts.clips.map((clip) => {
         const ranges =
             clip.end != null
