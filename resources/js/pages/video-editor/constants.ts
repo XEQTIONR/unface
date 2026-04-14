@@ -44,3 +44,17 @@ export const names = [
         'Yasmine',
         'Zachary',
 ]
+
+/** Ruler/timeline content stays at least this far past the playhead (px). */
+export const TIMELINE_RIGHT_MARGIN_PX = 64
+
+/** Ruler canvas height; must match `paintTimelineRuler` / clips row start. */
+export const TIMELINE_RULER_HEIGHT_PX = 36
+
+export const CLIP_CHAR_ROW_HEIGHT_PX = 60;
+/** Left column for face avatars; matches `CLIP_CHAR_ROW_HEIGHT_PX` so rows line up with Fabric tracks. */
+export const TIMELINE_FACE_GUTTER_PX = CLIP_CHAR_ROW_HEIGHT_PX
+
+export const FACE_OVERLAY_KEY = '__unfaceFaceOverlay' as const
+
+export const cyanOverlayStroke = 'rgba(0, 255, 255, 0.95)'

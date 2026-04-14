@@ -27,8 +27,9 @@ import { Slider } from '@/components/ui/slider'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { create } from '@/routes/videos'
-import type { FaceBox, IdentityBox, IdentityFrame } from '@/types/video'
-import type { Clip } from '@/types/video'
+import type { Clip, DisplayCanvasDraw, FaceBox, FaceFabricLabel, FaceFabricRect, IdentityBox, IdentityFrame } from '@/types/video'
+import { computeTimelineContentWidthPx, playheadOffsetInTimelineContentPx } from './video-editor/compute-widths'
+import { FACE_OVERLAY_KEY, cyanOverlayStroke, TIMELINE_FACE_GUTTER_PX, TIMELINE_RIGHT_MARGIN_PX, TIMELINE_RULER_HEIGHT_PX } from './video-editor/constants'
 import { 
     DETECTION_INTERVAL_MS, 
     FACE_API_MODEL_BASE, 
@@ -38,55 +39,12 @@ import {
     names as allNames,
     PX_PER_FRAME, 
 } from './video-editor/constants'
+import { CLIP_CHAR_ROW_HEIGHT_PX } from './video-editor/constants'
 import {
-    CLIP_CHAR_ROW_HEIGHT_PX,
     CLIP_FIRST_CHAR_ROW_TOP_PX,
     syncClipsFabricCanvas,
 } from './video-editor/paint-clips-fabric'
 import { syncRulerFabricCanvas } from './video-editor/paint-ruler-fabric'
-
-
-/** Ruler/timeline content stays at least this far past the playhead (px). */
-const TIMELINE_RIGHT_MARGIN_PX = 64
-
-/** Ruler canvas height; must match `paintTimelineRuler` / clips row start. */
-const TIMELINE_RULER_HEIGHT_PX = 36
-
-/** Left column for face avatars; matches `CLIP_CHAR_ROW_HEIGHT_PX` so rows line up with Fabric tracks. */
-const TIMELINE_FACE_GUTTER_PX = CLIP_CHAR_ROW_HEIGHT_PX
-
-function computeTimelineContentWidthPx(opts: {
-    durationSec: number
-    currentTime: number
-    viewportCssWidth: number
-    zoomLevel: number
-}): number {
-    const pxPerSec = PX_PER_SECOND * opts.zoomLevel
-
-    return Math.max(
-        opts.durationSec * pxPerSec,
-        opts.currentTime * pxPerSec + TIMELINE_RIGHT_MARGIN_PX,
-        opts.viewportCssWidth,
-    )
-}
-
-/** Horizontal offset (px) from the start of the timeline content (after the face gutter) to the playhead. */
-function playheadOffsetInTimelineContentPx(opts: {
-    showFrames: boolean
-    frameCount: number
-    currentTimeSec: number
-    zoomLevel: number
-    durationSec: number
-}): number {
-    const { showFrames, frameCount, currentTimeSec, zoomLevel, durationSec } = opts
-    const frameStripPx = frameCount * PX_PER_FRAME
-
-    if (showFrames && frameStripPx > 0 && durationSec > 1e-9) {
-        return (currentTimeSec / durationSec) * frameStripPx
-    }
-
-    return currentTimeSec * PX_PER_SECOND * zoomLevel
-}
 
 /**
  * Which recorded frame to show during playback at time `t`.
@@ -120,10 +78,6 @@ function identityFrameIndexForPlayback(
     return n - 1
 }
 
-const FACE_OVERLAY_KEY = '__unfaceFaceOverlay' as const
-
-const cyanOverlayStroke = 'rgba(0, 255, 255, 0.95)'
-
 function removeFabricFaceOverlays(f: StaticCanvas) {
     const tagged = f
         .getObjects()
@@ -136,16 +90,6 @@ function removeFabricFaceOverlays(f: StaticCanvas) {
         f.remove(...tagged)
     }
 }
-
-type FaceFabricRect = {
-    x: number
-    y: number
-    w: number
-    h: number
-    dashed?: boolean
-}
-
-type FaceFabricLabel = { x: number; y: number; text: string }
 
 function tagFaceOverlay<T>(o: T): T {
     ;(o as unknown as Record<string, boolean>)[FACE_OVERLAY_KEY] = true
@@ -206,16 +150,9 @@ function replaceFabricFaceOverlays(
     f.renderAll()
 }
 
-type DisplayCanvasDraw = {
-    fCanvas: StaticCanvas
-    /** Logical width (CSS px), same as Fabric canvas width — use for face overlay math. */
-    cw: number
-    ch: number
-    vw: number
-    vh: number
-}
-
 export default function VideoEditor() {
+
+    // Refs
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const fabricCanvasRef = useRef<StaticCanvas | null>(null)
     const chars = useRef<IdentityBox[]>([])
@@ -246,6 +183,7 @@ export default function VideoEditor() {
     const facesScrollRef = useRef<HTMLDivElement>(null)
     const timelineInnerRef = useRef<HTMLDivElement>(null)
 
+    // State
     const [aspectRatio, setAspectRatio] = useState<number|undefined>(undefined)
     const [currentFaces, setCurrentFaces] = useState<Set<string>>(new Set([]))
     const [currentTime, setCurrentTime] = useState(0)
@@ -268,206 +206,29 @@ export default function VideoEditor() {
     const [timelineInnerHeightPx, setTimelineInnerHeightPx] = useState(0)
     const [showFaces, setShowFaces] = useState(true)
     const [showFrames, setShowFrames] = useState(false)
-    
-    useLayoutEffect(() => {
-        const el = timelineInnerRef.current
 
-        if (!el) {
-            return
-        }
+    // Computed values
+    const durationSecForTimeline = duration > 0 ? duration : videoLength > 0 ? videoLength : 0
+    const timeBasedTimelineSpanPx = computeTimelineContentWidthPx({
+        durationSec: durationSecForTimeline,
+        currentTime,
+        viewportCssWidth: timelineViewportWidth,
+        zoomLevel,
+    })
+    const frameStripWidthPx = totalFrames * PX_PER_FRAME
+    const timelineSpanPx =
+        showFrames && frameStripWidthPx > 0 ? frameStripWidthPx : timeBasedTimelineSpanPx
+    const timelineGutterPx = faces.size > 0 && !detect && showFaces ? TIMELINE_FACE_GUTTER_PX : 0
+    const timelineContentWidthPx = timelineGutterPx + timelineSpanPx
+    const playheadContentOffsetPx = playheadOffsetInTimelineContentPx({
+        showFrames,
+        frameCount: totalFrames,
+        currentTimeSec: currentTime,
+        zoomLevel,
+        durationSec: durationSecForTimeline,
+    })
 
-        const update = () => {
-            setTimelineInnerHeightPx(el.getBoundingClientRect().height)
-        }
-
-        update()
-        const ro = new ResizeObserver(update)
-        ro.observe(el)
-
-        return () => {
-            ro.disconnect()
-        }
-    }, [])
-
-    useEffect(() => {
-        if (videoPanelRef.current) {
-            setVideoPanelHeight(videoPanelRef.current.clientHeight)
-        }
-    }, [videoPanelRef])
-
-    useEffect(() => {
-        return () => {
-            if (videoBlobUrlRef.current) {
-                URL.revokeObjectURL(videoBlobUrlRef.current)
-            }
-        }
-    }, [])
-    
-    useEffect(() => {
-        detectionCanvasRef.current = document.createElement('canvas')
-
-        return () => {
-            detectionCanvasRef.current = null
-        }
-    }, [])
-
-    useEffect(() => {
-
-        const v = videoRef.current
-        let cancelled = false
-
-        if (v) {
-            v.crossOrigin = 'anonymous'
-            v.load()
-        }
-        
-        (async () => {
-            try {
-                // Prefer WebGL for faster inference; fall back to CPU if WebGL fails (e.g. tainted source).
-                const ok =
-                    (await tf.setBackend('webgl')) || (await tf.setBackend('cpu'))
-
-                if (!ok || cancelled) {
-                    return
-                }
-
-                await tf.ready()
-
-                if (cancelled) {
-                    return
-                }
-
-                await faceapi.nets.ssdMobilenetv1.loadFromUri(FACE_API_MODEL_BASE)
-
-                if (!cancelled) {
-                    setFaceApiReady(true)
-                }
-            } catch (error) {
-                console.error(error)
-            }
-        })();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [])
-
-    useEffect(() => {
-        if (!faceApiReady || !isPlaying || !detect) {
-            return;
-        }
-
-        let cancelled = false;
-        let rafId = 0;
-        let lastDetectionAt = 0;
-        let busy = false;
-
-        const tick = (time: number) => {
-
-            if (cancelled) {
-                return;
-            }
-
-            rafId = requestAnimationFrame(tick);
-
-            if (busy) {
-                return;
-            }
-
-            const video = videoRef.current;
-            const canvas = detectionCanvasRef.current;
-
-            if (!video || !canvas || video.paused || video.ended) {
-                return
-            }
-
-            if (time - lastDetectionAt < DETECTION_INTERVAL_MS) {
-                return
-            }
-
-            const vw = video.videoWidth;
-            const vh = video.videoHeight;
-
-            if (!vw || !vh) {
-                return
-            }
-
-            const long = Math.max(vw, vh);
-            const targetLong = Math.min(long, MAX_DETECTION_LONG_SIDE);
-            const scale = long > 0 ? targetLong / long : 1;
-            const dw = Math.max(1, Math.round(vw * scale));
-            const dh = Math.max(1, Math.round(vh * scale));
-
-            let input: HTMLVideoElement | HTMLCanvasElement = video;
-
-            if (scale < 1 - 1e-6) {
-                canvas.width = dw;
-                canvas.height = dh;
-
-                const ctx = canvas.getContext('2d', { willReadFrequently: false });
-
-                if (!ctx) {
-                    return;
-                }
-
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
-                ctx.drawImage(video, 0, 0, dw, dh);
-                input = canvas;
-                
-            }
-
-            lastDetectionAt = time;
-            busy = true;
-
-            void faceapi
-                .detectAllFaces(
-                    input,
-                    new faceapi.SsdMobilenetv1Options({
-                        minConfidence: 0.4,
-                        maxResults: 20,
-                    }),
-                )
-                .then((detections: FaceDetection[]) => {
-                    const fs: FaceBox[] = detections.map((d: FaceDetection) => ({
-                        x: d.box.x,
-                        y: d.box.y,
-                        w: d.box.width,
-                        h: d.box.height,
-                    }));
-
-                    latestFacesRef.current = fs
-                    lastDetectionDimsRef.current = { dw, dh }
-
-                    return detections
-                })
-                .catch((error: unknown) => {
-                    console.error(error);
-                })
-                .finally(() => {
-                    busy = false;
-                });
-        };
-
-        rafId = requestAnimationFrame(tick);
-
-        return () => {
-            cancelled = true;
-            cancelAnimationFrame(rafId);
-        };
-    }, [faceApiReady, isPlaying, detect])
-
-    useEffect(() => {
-        return () => {
-            void fabricCanvasRef.current?.dispose()
-            fabricCanvasRef.current = null
-            rulerFabricCanvasRef.current?.dispose()
-            rulerFabricCanvasRef.current = null
-            clipsFabricCanvasRef.current?.dispose()
-            clipsFabricCanvasRef.current = null
-        }
-    }, [])
-
+    // Callbacks
     const formatTime = useCallback((time: number, withHours: boolean = false) => {
         const hours = Math.floor(time / 3600)
         const minutes = Math.floor((time % 3600) / 60)
@@ -564,6 +325,79 @@ export default function VideoEditor() {
         return { fCanvas, cw: w, ch: h, vw, vh }
     }, [])
 
+    const paintClipsCanvas = useCallback(() => {
+        const el = clipsCanvasRef.current
+
+        if (!el) {
+            return
+        }
+
+        const vl =
+            videoLength > 0
+                ? videoLength
+                : duration > 0
+                  ? duration
+                  : videoRef.current && videoRef.current.duration > 0
+                    ? videoRef.current.duration
+                    : 0
+
+        const videoLengthSec = Math.max(vl, 1e-6)
+        const pxPerSec = PX_PER_SECOND * zoomLevel
+        let trackWidthPx = Math.max(
+            1,
+            timelineSpanPx,
+            videoLengthSec * pxPerSec,
+        )
+
+        if (showFrames && totalFrames > 0) {
+            trackWidthPx = totalFrames * PX_PER_FRAME
+        }
+
+        const placeholderH = 80
+
+        let fabricCanvas = clipsFabricCanvasRef.current
+
+        if (fabricCanvas && fabricCanvas.lowerCanvasEl !== el) {
+            fabricCanvas.dispose()
+            fabricCanvas = null
+            clipsFabricCanvasRef.current = null
+        }
+
+        if (!fabricCanvas) {
+            fabricCanvas = new StaticCanvas(el, {
+                width: trackWidthPx,
+                height: placeholderH,
+                enableRetinaScaling: true,
+            })
+            clipsFabricCanvasRef.current = fabricCanvas
+        }
+
+        syncClipsFabricCanvas(fabricCanvas, idFramesRef.current, {
+            clips,
+            zoomLevel,
+            trackWidthPx,
+            isPlaying,
+            detect,
+            liveVideoTimeSec: videoRef.current?.currentTime ?? currentTimeRef.current,
+            recordingStartSec: clipRecordingStartRef.current,
+            spinnerAngleRad: (performance.now() / 400) % (Math.PI * 2),
+            showFrames: showFrames,
+            chars: [...faces],
+            totalFrames: idFramesRef.current.length,
+        })
+    }, [
+        clips,
+        zoomLevel,
+        videoLength,
+        duration,
+        isPlaying,
+        detect,
+        timelineSpanPx,
+        showFrames,
+        faces,
+        totalFrames,
+    ])
+
     const setTimeFromClientX = useCallback((clientX: number) => {
         const timeline = timelineScrollRef.current
         const video = videoRef.current
@@ -615,79 +449,6 @@ export default function VideoEditor() {
         }
     }, [duration, zoomLevel, faces.size, showFrames, videoLength])
 
-    const durationSecForTimeline = duration > 0 ? duration : videoLength > 0 ? videoLength : 0
-    const timeBasedTimelineSpanPx = computeTimelineContentWidthPx({
-        durationSec: durationSecForTimeline,
-        currentTime,
-        viewportCssWidth: timelineViewportWidth,
-        zoomLevel,
-    })
-    const frameStripWidthPx = totalFrames * PX_PER_FRAME
-    const timelineSpanPx =
-        showFrames && frameStripWidthPx > 0 ? frameStripWidthPx : timeBasedTimelineSpanPx
-    const timelineGutterPx = faces.size > 0 && !detect && showFaces ? TIMELINE_FACE_GUTTER_PX : 0
-    const timelineContentWidthPx = timelineGutterPx + timelineSpanPx
-    const playheadContentOffsetPx = playheadOffsetInTimelineContentPx({
-        showFrames,
-        frameCount: totalFrames,
-        currentTimeSec: currentTime,
-        zoomLevel,
-        durationSec: durationSecForTimeline,
-    })
-
-    useEffect(() => {
-        const el = timelineScrollRef.current
-
-        if (!el) {
-            return
-        }
-
-        const ro = new ResizeObserver(() => {
-            setTimelineViewportWidth(el.clientWidth)
-        })
-        ro.observe(el)
-        setTimelineViewportWidth(el.clientWidth)
-
-        return () => {
-            ro.disconnect()
-        }
-    }, [])
-
-    useEffect(() => {
-        const el = timelineScrollRef.current
-
-        if (!el || !isPlaying || isScrubbing) {
-            return
-        }
-
-        const gutter = faces.size > 0 ? TIMELINE_FACE_GUTTER_PX : 0
-        const playheadPx = gutter + playheadContentOffsetPx
-        const margin = TIMELINE_RIGHT_MARGIN_PX
-        const viewW = el.clientWidth
-        const maxScroll = Math.max(0, el.scrollWidth - viewW)
-        let next = el.scrollLeft
-
-        if (playheadPx < next + margin) {
-            next = Math.max(0, playheadPx - margin)
-        }
-
-        if (playheadPx > next + viewW - margin) {
-            next = Math.min(maxScroll, playheadPx - viewW + margin)
-        }
-
-        if (next !== el.scrollLeft) {
-            el.scrollLeft = next
-        }
-    }, [
-        currentTime,
-        zoomLevel,
-        isPlaying,
-        isScrubbing,
-        faces.size,
-        playheadContentOffsetPx,
-    ])
-
-
     const calculateAndSetVideoDimensions = useCallback(() => {
         const video = videoRef.current as HTMLVideoElement
         
@@ -709,6 +470,74 @@ export default function VideoEditor() {
         setVideoPanelHeight(panel.offsetHeight)
     }, [aspectRatio, videoRef])
 
+    const paintTimelineRuler = useCallback(() => {
+        const el = rulerCanvasRef.current
+        const container = rulerContainerRef.current
+
+        if (!el || !container) {
+            return
+        }
+
+        const durationSec =
+            videoRef.current &&
+            Number.isFinite(videoRef.current.duration) &&
+            videoRef.current.duration > 0
+                ? videoRef.current.duration
+                : duration > 0
+                  ? duration
+                  : videoLength > 0
+                    ? videoLength
+                    : 0
+
+        let cssWidth = computeTimelineContentWidthPx({
+            durationSec,
+            currentTime: currentTimeRef.current,
+            viewportCssWidth: timelineViewportWidth,
+            zoomLevel,
+        })
+
+        if (showFrames && totalFrames > 0) {
+            cssWidth = totalFrames * PX_PER_FRAME
+        }
+
+        const cssHeight = TIMELINE_RULER_HEIGHT_PX
+
+        let fabricCanvas = rulerFabricCanvasRef.current
+
+        if (fabricCanvas && fabricCanvas.lowerCanvasEl !== el) {
+            fabricCanvas.dispose()
+            fabricCanvas = null
+            rulerFabricCanvasRef.current = null
+        }
+
+        if (!fabricCanvas) {
+            fabricCanvas = new StaticCanvas(el, {
+                width: cssWidth,
+                height: cssHeight,
+                enableRetinaScaling: true,
+            })
+            rulerFabricCanvasRef.current = fabricCanvas
+        }
+
+        syncRulerFabricCanvas(fabricCanvas, {
+            cssWidth,
+            cssHeight,
+            zoomLevel,
+            formatTime: (t) => formatTime(t),
+            showFrames,
+            totalFrames: idFramesRef.current.length,
+        })
+    }, [
+        zoomLevel,
+        duration,
+        videoLength,
+        timelineViewportWidth,
+        formatTime,
+        showFrames,
+        totalFrames,
+    ])
+
+    // Event handlers
     const onResize = calculateAndSetVideoDimensions
 
     const onVideoFileSelect = useCallback((file: File) => {
@@ -1029,72 +858,257 @@ export default function VideoEditor() {
 
         i.current = 0
     }
+    
+    // Effects
+    useLayoutEffect(() => {
+        const el = timelineInnerRef.current
 
-    const paintTimelineRuler = useCallback(() => {
-        const el = rulerCanvasRef.current
-        const container = rulerContainerRef.current
-
-        if (!el || !container) {
+        if (!el) {
             return
         }
 
-        const durationSec =
-            videoRef.current &&
-            Number.isFinite(videoRef.current.duration) &&
-            videoRef.current.duration > 0
-                ? videoRef.current.duration
-                : duration > 0
-                  ? duration
-                  : videoLength > 0
-                    ? videoLength
-                    : 0
-
-        let cssWidth = computeTimelineContentWidthPx({
-            durationSec,
-            currentTime: currentTimeRef.current,
-            viewportCssWidth: timelineViewportWidth,
-            zoomLevel,
-        })
-
-        if (showFrames && totalFrames > 0) {
-            cssWidth = totalFrames * PX_PER_FRAME
+        const update = () => {
+            setTimelineInnerHeightPx(el.getBoundingClientRect().height)
         }
 
-        const cssHeight = TIMELINE_RULER_HEIGHT_PX
+        update()
+        const ro = new ResizeObserver(update)
+        ro.observe(el)
 
-        let fabricCanvas = rulerFabricCanvasRef.current
+        return () => {
+            ro.disconnect()
+        }
+    }, [])
 
-        if (fabricCanvas && fabricCanvas.lowerCanvasEl !== el) {
-            fabricCanvas.dispose()
-            fabricCanvas = null
+    useEffect(() => {
+        if (videoPanelRef.current) {
+            setVideoPanelHeight(videoPanelRef.current.clientHeight)
+        }
+    }, [videoPanelRef])
+
+    useEffect(() => {
+        return () => {
+            if (videoBlobUrlRef.current) {
+                URL.revokeObjectURL(videoBlobUrlRef.current)
+            }
+        }
+    }, [])
+    
+    useEffect(() => {
+        detectionCanvasRef.current = document.createElement('canvas')
+
+        return () => {
+            detectionCanvasRef.current = null
+        }
+    }, [])
+
+    useEffect(() => {
+
+        const v = videoRef.current
+        let cancelled = false
+
+        if (v) {
+            v.crossOrigin = 'anonymous'
+            v.load()
+        }
+        
+        (async () => {
+            try {
+                // Prefer WebGL for faster inference; fall back to CPU if WebGL fails (e.g. tainted source).
+                const ok =
+                    (await tf.setBackend('webgl')) || (await tf.setBackend('cpu'))
+
+                if (!ok || cancelled) {
+                    return
+                }
+
+                await tf.ready()
+
+                if (cancelled) {
+                    return
+                }
+
+                await faceapi.nets.ssdMobilenetv1.loadFromUri(FACE_API_MODEL_BASE)
+
+                if (!cancelled) {
+                    setFaceApiReady(true)
+                }
+            } catch (error) {
+                console.error(error)
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [])
+
+    useEffect(() => {
+        if (!faceApiReady || !isPlaying || !detect) {
+            return;
+        }
+
+        let cancelled = false;
+        let rafId = 0;
+        let lastDetectionAt = 0;
+        let busy = false;
+
+        const tick = (time: number) => {
+
+            if (cancelled) {
+                return;
+            }
+
+            rafId = requestAnimationFrame(tick);
+
+            if (busy) {
+                return;
+            }
+
+            const video = videoRef.current;
+            const canvas = detectionCanvasRef.current;
+
+            if (!video || !canvas || video.paused || video.ended) {
+                return
+            }
+
+            if (time - lastDetectionAt < DETECTION_INTERVAL_MS) {
+                return
+            }
+
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+
+            if (!vw || !vh) {
+                return
+            }
+
+            const long = Math.max(vw, vh);
+            const targetLong = Math.min(long, MAX_DETECTION_LONG_SIDE);
+            const scale = long > 0 ? targetLong / long : 1;
+            const dw = Math.max(1, Math.round(vw * scale));
+            const dh = Math.max(1, Math.round(vh * scale));
+
+            let input: HTMLVideoElement | HTMLCanvasElement = video;
+
+            if (scale < 1 - 1e-6) {
+                canvas.width = dw;
+                canvas.height = dh;
+
+                const ctx = canvas.getContext('2d', { willReadFrequently: false });
+
+                if (!ctx) {
+                    return;
+                }
+
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(video, 0, 0, dw, dh);
+                input = canvas;
+                
+            }
+
+            lastDetectionAt = time;
+            busy = true;
+
+            void faceapi
+                .detectAllFaces(
+                    input,
+                    new faceapi.SsdMobilenetv1Options({
+                        minConfidence: 0.4,
+                        maxResults: 20,
+                    }),
+                )
+                .then((detections: FaceDetection[]) => {
+                    const fs: FaceBox[] = detections.map((d: FaceDetection) => ({
+                        x: d.box.x,
+                        y: d.box.y,
+                        w: d.box.width,
+                        h: d.box.height,
+                    }));
+
+                    latestFacesRef.current = fs
+                    lastDetectionDimsRef.current = { dw, dh }
+
+                    return detections
+                })
+                .catch((error: unknown) => {
+                    console.error(error);
+                })
+                .finally(() => {
+                    busy = false;
+                });
+        };
+
+        rafId = requestAnimationFrame(tick);
+
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(rafId);
+        };
+    }, [faceApiReady, isPlaying, detect])
+
+    useEffect(() => {
+        return () => {
+            void fabricCanvasRef.current?.dispose()
+            fabricCanvasRef.current = null
+            rulerFabricCanvasRef.current?.dispose()
             rulerFabricCanvasRef.current = null
+            clipsFabricCanvasRef.current?.dispose()
+            clipsFabricCanvasRef.current = null
+        }
+    }, [])
+
+    useEffect(() => {
+        const el = timelineScrollRef.current
+
+        if (!el) {
+            return
         }
 
-        if (!fabricCanvas) {
-            fabricCanvas = new StaticCanvas(el, {
-                width: cssWidth,
-                height: cssHeight,
-                enableRetinaScaling: true,
-            })
-            rulerFabricCanvasRef.current = fabricCanvas
-        }
-
-        syncRulerFabricCanvas(fabricCanvas, {
-            cssWidth,
-            cssHeight,
-            zoomLevel,
-            formatTime: (t) => formatTime(t),
-            showFrames,
-            totalFrames: idFramesRef.current.length,
+        const ro = new ResizeObserver(() => {
+            setTimelineViewportWidth(el.clientWidth)
         })
+        ro.observe(el)
+        setTimelineViewportWidth(el.clientWidth)
+
+        return () => {
+            ro.disconnect()
+        }
+    }, [])
+
+    useEffect(() => {
+        const el = timelineScrollRef.current
+
+        if (!el || !isPlaying || isScrubbing) {
+            return
+        }
+
+        const gutter = faces.size > 0 ? TIMELINE_FACE_GUTTER_PX : 0
+        const playheadPx = gutter + playheadContentOffsetPx
+        const margin = TIMELINE_RIGHT_MARGIN_PX
+        const viewW = el.clientWidth
+        const maxScroll = Math.max(0, el.scrollWidth - viewW)
+        let next = el.scrollLeft
+
+        if (playheadPx < next + margin) {
+            next = Math.max(0, playheadPx - margin)
+        }
+
+        if (playheadPx > next + viewW - margin) {
+            next = Math.min(maxScroll, playheadPx - viewW + margin)
+        }
+
+        if (next !== el.scrollLeft) {
+            el.scrollLeft = next
+        }
     }, [
+        currentTime,
         zoomLevel,
-        duration,
-        videoLength,
-        timelineViewportWidth,
-        formatTime,
-        showFrames,
-        totalFrames,
+        isPlaying,
+        isScrubbing,
+        faces.size,
+        playheadContentOffsetPx,
     ])
 
     useEffect(() => {
@@ -1104,79 +1118,6 @@ export default function VideoEditor() {
     useEffect(() => {
         paintTimelineRuler()
     }, [paintTimelineRuler])
-
-    const paintClipsCanvas = useCallback(() => {
-        const el = clipsCanvasRef.current
-
-        if (!el) {
-            return
-        }
-
-        const vl =
-            videoLength > 0
-                ? videoLength
-                : duration > 0
-                  ? duration
-                  : videoRef.current && videoRef.current.duration > 0
-                    ? videoRef.current.duration
-                    : 0
-
-        const videoLengthSec = Math.max(vl, 1e-6)
-        const pxPerSec = PX_PER_SECOND * zoomLevel
-        let trackWidthPx = Math.max(
-            1,
-            timelineSpanPx,
-            videoLengthSec * pxPerSec,
-        )
-
-        if (showFrames && totalFrames > 0) {
-            trackWidthPx = totalFrames * PX_PER_FRAME
-        }
-
-        const placeholderH = 80
-
-        let fabricCanvas = clipsFabricCanvasRef.current
-
-        if (fabricCanvas && fabricCanvas.lowerCanvasEl !== el) {
-            fabricCanvas.dispose()
-            fabricCanvas = null
-            clipsFabricCanvasRef.current = null
-        }
-
-        if (!fabricCanvas) {
-            fabricCanvas = new StaticCanvas(el, {
-                width: trackWidthPx,
-                height: placeholderH,
-                enableRetinaScaling: true,
-            })
-            clipsFabricCanvasRef.current = fabricCanvas
-        }
-
-        syncClipsFabricCanvas(fabricCanvas, idFramesRef.current, {
-            clips,
-            zoomLevel,
-            trackWidthPx,
-            isPlaying,
-            detect,
-            liveVideoTimeSec: videoRef.current?.currentTime ?? currentTimeRef.current,
-            recordingStartSec: clipRecordingStartRef.current,
-            spinnerAngleRad: (performance.now() / 400) % (Math.PI * 2),
-            showFrames: showFrames,
-            chars: [...faces],
-            totalFrames: idFramesRef.current.length,
-        })
-    }, [
-        clips,
-        zoomLevel,
-        videoLength,
-        duration,
-        isPlaying,
-        detect,
-        timelineSpanPx,
-        showFrames,
-        faces,
-        totalFrames,
-    ])
 
     useEffect(() => {
         paintClipsCanvasRef.current = paintClipsCanvas
@@ -1324,7 +1265,7 @@ export default function VideoEditor() {
                                         id="seeker-line"
                                         className={cn(
                                             'pointer-events-none absolute -mr-px w-px overflow-visible bg-foreground',
-                                            isScrubbing ? '' : ' z-100',
+                                            isScrubbing ? '' : 'transition-all duration-250 ease-linear z-100',
                                         )}
                                         style={{
                                             left: `${(timelineGutterPx + playheadContentOffsetPx) + ((detect && isPlaying) ? 10 : -3)}px`, // -3 when playing back  // + 10 when scrubbing

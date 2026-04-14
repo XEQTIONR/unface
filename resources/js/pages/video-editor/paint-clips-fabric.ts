@@ -2,7 +2,7 @@ import { Circle, FabricText, Rect } from 'fabric';
 import type { StaticCanvas } from 'fabric';
 import type { Clip, IdentityFrame } from '@/types/video';
 import { characterTimeRangesFromFrames } from './character-time-ranges';
-import { PX_PER_SECOND, PX_PER_FRAME } from './constants';
+import { PX_PER_SECOND, PX_PER_FRAME, CLIP_CHAR_ROW_HEIGHT_PX } from './constants';
 
 export const CLIP_TRACK = {
     trackBg: 'rgba(64, 64, 64, 0.65)',
@@ -24,7 +24,7 @@ const TOP_LEFT = {
 
 const CLIP_GAP_PX = 2;
 /** Character / identity row height in the clips timeline (matches HTML face gutter rows). */
-export const CLIP_CHAR_ROW_HEIGHT_PX = 60;
+
 const CHAR_ROW_H = CLIP_CHAR_ROW_HEIGHT_PX;
 const TITLE_TOP = 6;
 const TITLE_SIZE = 11;

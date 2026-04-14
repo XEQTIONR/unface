@@ -1,3 +1,5 @@
+import type { StaticCanvas } from 'fabric'
+
 export type FaceBox = { x: number; y: number; w: number; h: number }
 
 export type FaceFrame = { faces: FaceBox[]; time: number }
@@ -22,4 +24,23 @@ export type CharacterTimeRange = {
     ranges: (TimeRange & {firstFrame?: number, lastFrame?: number})[]
     lastFrame: number
 }
+
+export type DisplayCanvasDraw = {
+    fCanvas: StaticCanvas
+    /** Logical width (CSS px), same as Fabric canvas width — use for face overlay math. */
+    cw: number
+    ch: number
+    vw: number
+    vh: number
+}
+
+export type FaceFabricRect = {
+    x: number
+    y: number
+    w: number
+    h: number
+    dashed?: boolean
+}
+
+export type FaceFabricLabel = { x: number; y: number; text: string }
 
