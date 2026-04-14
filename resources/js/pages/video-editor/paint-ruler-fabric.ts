@@ -1,15 +1,18 @@
 import { FabricText, Line } from 'fabric';
 import type { StaticCanvas } from 'fabric';
+import { PX_PER_FRAME } from './constants';
 
 const NO_INTERACTION = { selectable: false, evented: false } as const;
 
 export function syncRulerFabricCanvas(
     fabric: StaticCanvas,
     opts: {
-        cssWidth: number;
-        cssHeight: number;
-        zoomLevel: number;
-        formatTime: (t: number) => string;
+        cssWidth: number
+        cssHeight: number
+        zoomLevel: number
+        formatTime: (t: number) => string
+        showFrames: boolean
+        totalFrames: number
     },
 ): void {
     const { cssWidth, cssHeight, zoomLevel, formatTime } = opts;
@@ -19,9 +22,14 @@ export function syncRulerFabricCanvas(
     }
 
     fabric.clear();
+    
+    let majorStep = zoomLevel * 50
+    let minorStep = zoomLevel * 10
 
-    const majorStep = zoomLevel * 50;
-    const minorStep = zoomLevel * 10;
+    if (opts.showFrames) {
+        majorStep = 10 * PX_PER_FRAME
+        minorStep = PX_PER_FRAME
+    }
 
     if (minorStep <= 0 || majorStep <= 0) {
         fabric.renderAll();
@@ -38,7 +46,7 @@ export function syncRulerFabricCanvas(
             break;
         }
 
-        if (i % 5 === 0) {
+        if (i % (opts.showFrames ? 10: 5) === 0) {
             continue;
         }
 
@@ -65,17 +73,21 @@ export function syncRulerFabricCanvas(
                 ...NO_INTERACTION,
             }),
         );
+
+        
         objs.push(
-            new FabricText(formatTime(j * 5), {
-                left: Math.floor(x) + 8,
-                top: 12,
-                fontSize: 12,
-                fontFamily: 'Arial',
-                fill: '#888',
-                originX: 'left',
-                originY: 'top',
-                ...NO_INTERACTION,
-            }),
+            new FabricText( opts.showFrames ? `${j * (opts.showFrames ? 10: 5)} fr` : formatTime(j * (opts.showFrames ? 10: 5)), 
+                {
+                    left: Math.floor(x) + 8,
+                    top: 12,
+                    fontSize: 12,
+                    fontFamily: 'Arial',
+                    fill: '#888',
+                    originX: 'left',
+                    originY: 'top',
+                    ...NO_INTERACTION,
+                }
+            ),
         );
     }
 

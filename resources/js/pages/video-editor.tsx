@@ -35,7 +35,8 @@ import {
     PX_PER_SECOND, 
     MAX_DETECTION_LONG_SIDE, 
     MOVEMENT_THRESHOLD, 
-    names as allNames, 
+    names as allNames,
+    PX_PER_FRAME, 
 } from './video-editor/constants'
 import {
     CLIP_CHAR_ROW_HEIGHT_PX,
@@ -933,12 +934,16 @@ export default function VideoEditor() {
                     ? videoLength
                     : 0
 
-        const cssWidth = computeTimelineContentWidthPx({
+        let cssWidth = computeTimelineContentWidthPx({
             durationSec,
             currentTime,
             viewportCssWidth: timelineViewportWidth,
             zoomLevel,
         })
+
+        if (showFrames) {
+            cssWidth = idFramesRef.current.length * PX_PER_FRAME;
+        }
 
         const cssHeight = TIMELINE_RULER_HEIGHT_PX
 
@@ -964,8 +969,10 @@ export default function VideoEditor() {
             cssHeight,
             zoomLevel,
             formatTime: (t) => formatTime(t),
+            showFrames,
+            totalFrames: idFramesRef.current.length,
         })
-    }, [zoomLevel, currentTime, duration, videoLength, timelineViewportWidth, formatTime])
+    }, [zoomLevel, currentTime, duration, videoLength, timelineViewportWidth, formatTime, showFrames, idFramesRef])
 
     useEffect(() => {
         paintTimelineRuler()
@@ -989,11 +996,16 @@ export default function VideoEditor() {
 
         const videoLengthSec = Math.max(vl, 1e-6)
         const pxPerSec = PX_PER_SECOND * zoomLevel
-        const trackWidthPx = Math.max(
+        let trackWidthPx = Math.max(
             1,
             timelineSpanPx,
             videoLengthSec * pxPerSec,
         )
+
+        if (showFrames) {
+            trackWidthPx = idFramesRef.current.length * PX_PER_FRAME;
+        }
+
         const placeholderH = 80
 
         let fabricCanvas = clipsFabricCanvasRef.current
@@ -1024,6 +1036,7 @@ export default function VideoEditor() {
             spinnerAngleRad: (performance.now() / 400) % (Math.PI * 2),
             showFrames: showFrames,
             chars: [...faces],
+            totalFrames: idFramesRef.current.length,
         })
     }, [
         clips,

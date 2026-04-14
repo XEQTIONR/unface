@@ -71,14 +71,14 @@ export function syncClipsFabricCanvas(
         detect: boolean
         liveVideoTimeSec: number
         recordingStartSec: number
-        spinnerAngleRad: number,
+        spinnerAngleRad: number
         showFrames: boolean
         chars: string[]
+        totalFrames: number
     },
 ): void {
     const pxPerSec = PX_PER_SECOND * opts.zoomLevel;
     const trackW = Math.max(1, opts.trackWidthPx);
-    let lastFrame = -1
 
     const chars = new Set(frames.flatMap(({boxes}) => boxes.map(({name}) => name)));
     console.log('chars', chars)
@@ -95,7 +95,7 @@ export function syncClipsFabricCanvas(
         let w = clipWidthPx(clip, pxPerSec)
 
         if (opts.showFrames) {
-            w = frames.filter(({time}) => time >= clip.start && time <= (clip.end ?? -1)).length * PX_PER_FRAME;
+            w = opts.totalFrames * PX_PER_FRAME;
         }
         
         const h = clipColumnHeight(ranges.length > 0, ranges.length);
